@@ -1,34 +1,34 @@
-﻿# Trading App
+# Trading App
 
-Торговое ПО на Python: FastAPI + SQLite + Backtrader.
+Trading software: FastAPI + SQLite + Backtrader.
 
-## Требования
+## Requirements
 
 - Python 3.11+
 - Git
 
-## Установка
+## Install
 
     python -m venv .venv
     .venv\Scripts\activate
-    pip install -e .
+    pip install -e ".[dev]"
 
-## Запуск
+## Run
 
     uvicorn app.main:app --reload
 
-Открой http://127.0.0.1:8000/health — должен вернуться {"status": "ok"}.
+Open http://127.0.0.1:8000/health — should return {"status": "ok"}.
 
-## Структура
+## Structure
 
-- app/api/ — HTTP-роуты
-- app/services/ — бизнес-логика
-- app/repositories/ — доступ к данным
-- app/models/ — SQLAlchemy-модели
-- app/schemas/ — Pydantic-схемы
-- app/data_providers/ — адаптеры источников данных
-- app/brokers/ — адаптеры брокеров
-- app/strategies/ — торговые стратегии
-- app/backtest/ — движок бэктеста
-- tests/ — тесты
-- frontend/ — будущий React-фронт
+- app/api/ — HTTP routes
+- app/services/ — business logic
+- app/repositories/ — data access
+- app/models/ — SQLAlchemy models
+- app/schemas/ — Pydantic schemas
+- app/data_providers/ — market data adapters
+- app/brokers/ — broker adapters
+- app/strategies/ — trading strategies
+- app/backtest/ — backtest engine
+- tests/ — tests
+- frontend/ — future React frontend
