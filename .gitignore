@@ -1,33 +1,58 @@
-﻿# Виртуальное окружение
+# ---------- Виртуальное окружение ----------
 .venv/
 venv/
 env/
+ENV/
 
-# Python-кэш
+# ---------- Python: кэш и артефакты сборки ----------
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
 *.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+
+# ---------- Тесты и линтеры ----------
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+htmlcov/
 
-# База данных
+# ---------- Секреты и локальные настройки ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------- Базы данных ----------
 *.db
+*.sqlite
 *.sqlite3
 
-# Секреты
-.env
-.env.local
+# ---------- Исторические данные ----------
+data/raw/
+data/processed/
+data/cache/
 
-# Редакторы
+# ---------- Логи ----------
+*.log
+logs/
+
+# ---------- Редакторы ----------
 .idea/
 .vscode/
 *.swp
+*.swo
 
-# ОС
+# ---------- ОС ----------
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Логи
-*.log
-logs/
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
