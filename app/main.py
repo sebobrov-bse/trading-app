@@ -1,38 +1,37 @@
-from fastapi import Depends, FastAPI
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+from fastapi import FastAPI
+
+from app.api.v1 import api_v1_router
 from app.config import settings
-from app.db.session import get_db
-from app.models.system_status import SystemStatus
 
 
-app = FastAPI(
-    title=settings.app_name,
-    version="0.1.0",
-    debug=settings.debug,
-)
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Startup and shutdown hooks.
+
+    Startup runs before yield. Shutdown runs after yield.
+    Tables are created by Alembic, DB ping is in /health.
+    Add HTTP clients to exchanges here later.
+    """
+    # Startup
+    yield
+    # Shutdown
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "ok"}
+def create_app() -> FastAPI:
+    """App factory: builds and configures the FastAPI application."""
+    app = FastAPI(
+        title=settings.app_name,
+        version="0.1.0",
+        debug=settings.debug,
+        lifespan=lifespan,
+    )
+
+    app.include_router(api_v1_router)
+
+    return app
 
 
-@app.get("/db-check")
-def db_check(db: Session = Depends(get_db)) -> dict[str, str | int]:
-    """Write a record to DB and return the latest one."""
-    record = SystemStatus(status="ok")
-    db.add(record)
-    db.commit()
-    db.refresh(record)
-
-    stmt = select(SystemStatus).order_by(SystemStatus.id.desc()).limit(1)
-    latest = db.execute(stmt).scalar_one()
-
-    return {
-        "id": latest.id,
-        "status": latest.status,
-        "created_at": latest.created_at.isoformat(),
-    }
+app = create_app()
