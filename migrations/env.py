@@ -8,7 +8,7 @@ from app.db.base import Base
 
 # Импортируем модели, чтобы Alembic их видел.
 # Если добавишь новую модель — допиши её сюда.
-from app.models import SystemStatus  # noqa: F401
+from app.models import Candle, SystemStatus  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
