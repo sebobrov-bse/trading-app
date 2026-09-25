@@ -1,6 +1,6 @@
 """Load candles from MOEX ISS into SQLite."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -9,14 +9,13 @@ from app.models.candle import Candle
 from scripts.test_moex import fetch_candles
 
 
-# MOEX ISS returns timestamps in Moscow time (UTC+3).
-MSK_OFFSET = timedelta(hours=3)
-
-
 def parse_timestamp(value: str) -> datetime:
-    """Parse MOEX 'YYYY-MM-DD HH:MM:SS' (MSK) into UTC datetime."""
-    naive_msk = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-    return naive_msk - MSK_OFFSET
+    """Parse MOEX 'YYYY-MM-DD HH:MM:SS' into a naive datetime.
+
+    MOEX returns MSK timestamps. We store them as-is for now.
+    When adding CCXT (UTC-based), we will add per-provider conversion.
+    """
+    return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 
 
 def load_candles(secid: str, timeframe: int, days: int) -> int:
