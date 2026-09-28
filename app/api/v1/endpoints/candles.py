@@ -1,17 +1,17 @@
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.candle import Candle
-from app.schemas.candle import CandleCreate, CandleRead
+from app.schemas.candle import CandleCreate, CandleListResponse, CandleRead
 
 router = APIRouter(prefix="/candles", tags=["candles"])
 
-# Hard limit on response size. Prevents pulling tens of thousands of rows.
 MAX_LIMIT = 10_000
 DEFAULT_LIMIT = 1_000
 
@@ -21,10 +21,9 @@ def create_candles(
     candles: list[CandleCreate],
     db: Session = Depends(get_db),
 ) -> list[CandleRead]:
-    """Upsert a batch of candles.
+    """Upsert a batch of candles with ON CONFLICT DO NOTHING.
 
-    Uses SQLite ON CONFLICT DO NOTHING on (symbol, timeframe, timestamp).
-    Re-running with the same batch is safe: existing rows are skipped.
+    Idempotent: re-running with the same batch skips existing rows.
     """
     if not candles:
         return []
@@ -38,7 +37,6 @@ def create_candles(
     db.execute(stmt)
     db.commit()
 
-    # Read back by (symbol, timeframe, timestamp) to return DB-populated fields.
     symbols = {c.symbol for c in candles}
     timeframes = {c.timeframe for c in candles}
     timestamps = [c.timestamp for c in candles]
@@ -48,33 +46,59 @@ def create_candles(
         Candle.timeframe.in_(timeframes),
         Candle.timestamp.in_(timestamps),
     )
-    result = db.execute(read_stmt).scalars().all()
-    return list(result)
+    return list(db.execute(read_stmt).scalars().all())
 
 
-@router.get("", response_model=list[CandleRead])
+@router.get("", response_model=CandleListResponse)
 def list_candles(
     symbol: str = Query(..., min_length=1, max_length=20),
     timeframe: int = Query(..., ge=1),
-    from_ts: datetime | None = Query(None, alias="from"),
-    till_ts: datetime | None = Query(None, alias="till"),
+    start: datetime | None = Query(None, alias="start"),
+    end: datetime | None = Query(None, alias="end"),
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+    order: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
-) -> list[CandleRead]:
-    """Read candles by symbol, timeframe, and optional date range.
+) -> CandleListResponse:
+    """Read candles by symbol, timeframe, period with pagination.
 
-    Ordered by timestamp ascending. Hard limit on response size.
+    - `total` in the response is the full count matching the filter,
+      ignoring `limit`/`offset` — needed for pagination UI.
+    - `order` sorts by timestamp: `asc` (oldest first, default) or
+      `desc` (newest first).
     """
-    stmt = select(Candle).where(
+    # Base filter shared by count and data queries.
+    filters = [
         Candle.symbol == symbol,
         Candle.timeframe == timeframe,
+    ]
+    if start is not None:
+        filters.append(Candle.timestamp >= start)
+    if end is not None:
+        filters.append(Candle.timestamp <= end)
+
+    # Total count (ignoring limit/offset) for pagination metadata.
+    count_stmt = select(func.count(Candle.id)).where(*filters)
+    total = db.execute(count_stmt).scalar_one()
+
+    # Order direction.
+    order_clause = (
+        Candle.timestamp.asc() if order == "asc" else Candle.timestamp.desc()
     )
 
-    if from_ts is not None:
-        stmt = stmt.where(Candle.timestamp >= from_ts)
-    if till_ts is not None:
-        stmt = stmt.where(Candle.timestamp <= till_ts)
+    # Data page.
+    data_stmt = (
+        select(Candle)
+        .where(*filters)
+        .order_by(order_clause)
+        .limit(limit)
+        .offset(offset)
+    )
+    items = list(db.execute(data_stmt).scalars().all())
 
-    stmt = stmt.order_by(Candle.timestamp.asc()).limit(limit)
-
-    return list(db.execute(stmt).scalars().all())
+    return CandleListResponse(
+        items=[CandleRead.model_validate(c) for c in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )

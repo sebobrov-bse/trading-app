@@ -23,9 +23,22 @@ class CandleCreate(CandleBase):
 
 
 class CandleRead(CandleBase):
-    """Schema for reading a candle from DB (API response)."""
+    """Schema for reading a candle from DB (API response item)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     created_at: datetime
+
+
+class CandleListResponse(BaseModel):
+    """Paginated list of candles with metadata.
+
+    `total` is the total number of candles matching the filter
+    (ignoring limit/offset). Clients use it to render pagination.
+    """
+
+    items: list[CandleRead]
+    total: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+    offset: int = Field(..., ge=0)
