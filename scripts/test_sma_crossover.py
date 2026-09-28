@@ -42,6 +42,7 @@ def main() -> None:
     cerebro.addstrategy(SmaCrossover, fast=10, slow=30)
     cerebro.broker.setcash(100_000.0)
     cerebro.broker.setcommission(commission=0.001)
+    cerebro.addsizer(bt.sizers.PercentSizer, percents=95)
 
     print(f"Bars: {len(df)}")
     print(f"Starting Portfolio Value: {cerebro.broker.getvalue():.2f}")

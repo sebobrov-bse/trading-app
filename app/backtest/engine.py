@@ -39,6 +39,9 @@ def run_backtest(
     cerebro.addstrategy(SmaCrossover, fast=fast, slow=slow)
     cerebro.broker.setcash(cash)
     cerebro.broker.setcommission(commission=commission)
+    # Spend 95% of available cash per trade. Without a sizer, Backtrader
+    # trades a fixed size of 1 — useless for portfolio metrics.
+    cerebro.addsizer(bt.sizers.PercentSizer, percents=95)
 
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name="dd")
     cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe", riskfreerate=0.0)
