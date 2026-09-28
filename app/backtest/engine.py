@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import backtrader as bt
 import pandas as pd
 
+from app.backtest.feed import df_to_bt_feed
 from app.strategies.sma_crossover import SmaCrossover
 
 
@@ -35,12 +36,10 @@ def run_backtest(
         raise ValueError("Empty DataFrame — no data to backtest.")
 
     cerebro = bt.Cerebro()
-    cerebro.adddata(bt.feeds.PandasData(dataname=df))
+    cerebro.adddata(df_to_bt_feed(df))
     cerebro.addstrategy(SmaCrossover, fast=fast, slow=slow)
     cerebro.broker.setcash(cash)
     cerebro.broker.setcommission(commission=commission)
-    # Spend 95% of available cash per trade. Without a sizer, Backtrader
-    # trades a fixed size of 1 — useless for portfolio metrics.
     cerebro.addsizer(bt.sizers.PercentSizer, percents=95)
 
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name="dd")
