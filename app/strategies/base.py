@@ -13,6 +13,7 @@ class BaseStrategy(bt.Strategy):
     def __init__(self) -> None:
         self.order = None
         self.trade_log: list[dict] = []
+        self.bars_in_market: int = 0  # for exposure
 
     def log(self, txt: str) -> None:
         """Log a message with the current bar's date."""
@@ -47,27 +48,38 @@ class BaseStrategy(bt.Strategy):
             self.order = None
 
     def notify_trade(self, trade) -> None:
-        """Log trade open/close and append closed trades to trade_log."""
+        """Append a rich record to trade_log when a trade closes."""
         if not trade.isclosed:
             return
 
-        # trade.size is 0 after close. Recover the size from history.
-        closed_size = 0.0
+        # In some edge cases trade.history may be empty. Fall back to
+        # direct attributes, which Backtrader always populates.
         if trade.history:
-            closed_size = trade.history[-1].event.size
+            entry_dt = trade.history[0].event.dt
+            exit_dt = trade.history[-1].event.dt
+            entry_price = float(trade.history[0].event.price)
+            exit_price = float(trade.history[-1].event.price)
+            closed_size = abs(float(trade.history[-1].event.size))
+        else:
+            entry_dt = trade.dtopen
+            exit_dt = trade.dtclose
+            entry_price = float(trade.price)
+            exit_price = float(trade.price)
+            closed_size = abs(float(trade.size)) or 0.0
+
+        position_value = entry_price * closed_size
+        pnl_pct = (trade.pnlcomm / position_value * 100) if position_value else 0.0
 
         self.trade_log.append(
             {
-                "date": self.datas[0].datetime.date(0).isoformat(),
+                "entry_time": bt.num2date(entry_dt).isoformat(),
+                "exit_time": bt.num2date(exit_dt).isoformat(),
+                "entry_price": entry_price,
+                "exit_price": exit_price,
                 "size": closed_size,
-                "price": trade.price,
-                "pnl": trade.pnl,
-                "pnl_net": trade.pnlcomm,
+                "bars_held": int(trade.barlen),
+                "pnl": float(trade.pnl),
+                "pnl_net": float(trade.pnlcomm),
+                "pnl_percent": float(pnl_pct),
             }
-        )
-        self.log(
-            f"TRADE CLOSED, size={closed_size:.0f}, "
-            f"price={trade.price:.2f}, "
-            f"pnl={trade.pnl:.2f}, "
-            f"pnl_net={trade.pnlcomm:.2f}"
         )
