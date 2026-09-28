@@ -1,30 +1,43 @@
-from pydantic import BaseModel, Field
+from datetime import date
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class BacktestRequest(BaseModel):
-    """Request body for POST /api/v1/backtest."""
+    """Request body for POST /api/v1/backtest/run."""
 
-    symbol: str = Field(..., min_length=1, max_length=20)
-    timeframe: int = Field(24, ge=1)
-    start: str | None = Field(None, description="YYYY-MM-DD")
-    end: str | None = Field(None, description="YYYY-MM-DD")
+    symbol: str = Field(
+        ..., min_length=2, max_length=20, pattern=r"^[A-Z][A-Z0-9]*$"
+    )
+    timeframe: Literal[1, 10, 60, 24] = 24
+    start: date
+    end: date
+    strategy: str = Field(..., min_length=1, max_length=50)
+    params: dict[str, Any] = Field(default_factory=dict)
     cash: float = Field(100_000.0, gt=0)
     commission: float = Field(0.001, ge=0, le=0.1)
-    fast: int = Field(10, ge=2, le=200)
-    slow: int = Field(30, ge=3, le=500)
+
+    @model_validator(mode="after")
+    def check_dates(self) -> "BacktestRequest":
+        if self.start > self.end:
+            raise ValueError("start must be <= end")
+        return self
 
 
-class BacktestResponse(BaseModel):
-    """Response body for POST /api/v1/backtest."""
+class BacktestResult(BaseModel):
+    """Response body for POST /api/v1/backtest/run."""
 
     symbol: str
     timeframe: int
-    start_value: float
+    start: date
+    end: date
+    strategy: str
+    params: dict[str, Any]
+    bars: int
+    trades: int
     final_value: float
-    total_return_pct: float
-    max_drawdown_pct: float
-    sharpe_ratio: float | None
-    total_trades: int
-    won_trades: int
-    lost_trades: int
-    win_rate_pct: float | None
+    pnl: float
+    pnl_percent: float
+    win_rate: float
+    max_drawdown: float
