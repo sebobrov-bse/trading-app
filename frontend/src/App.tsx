@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Backtest } from './pages/Backtest';
 import { History } from './pages/History';
+import { HistoryDetail } from './pages/HistoryDetail';
 import { Data } from './pages/Data';
 
 export function App() {
@@ -13,6 +14,7 @@ export function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/backtest" element={<Backtest />} />
           <Route path="/history" element={<History />} />
+          <Route path="/history/:id" element={<HistoryDetail />} />
           <Route path="/data" element={<Data />} />
         </Route>
       </Routes>

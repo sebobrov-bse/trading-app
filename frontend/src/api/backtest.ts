@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPost } from './client';
 import type {
+  BacktestDetails,
   BacktestHistoryResponse,
   BacktestRequest,
   BacktestResult,
@@ -26,8 +27,8 @@ export function getBacktestHistory(params?: {
   );
 }
 
-export function getBacktest(id: number): Promise<BacktestResult> {
-  return apiGet<BacktestResult>(`/backtest/${id}`);
+export function getBacktest(id: number): Promise<BacktestDetails> {
+  return apiGet<BacktestDetails>(`/backtest/${id}`);
 }
 
 export function deleteBacktest(id: number): Promise<void> {

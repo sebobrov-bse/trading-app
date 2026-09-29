@@ -98,3 +98,32 @@ export interface BacktestHistoryResponse {
   limit: number;
   offset: number;
 }
+export interface BacktestDetails {
+  id: number;
+  symbol: string;
+  timeframe: number;
+  start_date: string;
+  end_date: string;
+  strategy: string;
+  params: Record<string, unknown>;
+  cash: number;
+  commission: number;
+  bars: number;
+  trades_count: number;
+  final_value: number;
+  pnl: number;
+  pnl_percent: number;
+  cagr: number;
+  sharpe: number;
+  sortino: number;
+  calmar: number;
+  max_drawdown: number;
+  win_rate: number;
+  profit_factor: number;
+  avg_win: number;
+  avg_loss: number;
+  exposure: number;
+  created_at: string;
+  trades_list: TradeInfo[];
+  equity_curve: EquityPoint[];
+}
