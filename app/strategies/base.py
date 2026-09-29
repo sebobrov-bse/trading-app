@@ -6,14 +6,17 @@ import backtrader as bt
 class BaseStrategy(bt.Strategy):
     """Base class for all strategies.
 
-    Provides self.order, self.trade_log, self.log(),
-    and default notify_order / notify_trade handlers.
+    Tracks closed trades with reliable entry/exit info by remembering
+    the executed orders in notify_order, because in some Backtrader
+    configurations trade.history is not populated.
     """
 
     def __init__(self) -> None:
         self.order = None
         self.trade_log: list[dict] = []
-        self.bars_in_market: int = 0  # for exposure
+        self.bars_in_market: int = 0
+        self._last_entry: dict | None = None
+        self._last_exit: dict | None = None
 
     def log(self, txt: str) -> None:
         """Log a message with the current bar's date."""
@@ -21,17 +24,27 @@ class BaseStrategy(bt.Strategy):
         print(f"{dt.isoformat()}, {txt}")
 
     def notify_order(self, order) -> None:
-        """Handle order lifecycle."""
+        """Handle order lifecycle and remember entry/exit prices."""
         if order.status in (order.Submitted, order.Accepted):
             return
 
         if order.status == order.Completed:
+            dt = self.datas[0].datetime.datetime(0)
             side = "BUY" if order.isbuy() else "SELL"
             self.log(
                 f"{side} EXECUTED, price={order.executed.price:.2f}, "
                 f"size={order.executed.size:.0f}, "
                 f"commission={order.executed.comm:.2f}"
             )
+            info = {
+                "time": dt,
+                "price": float(order.executed.price),
+                "size": abs(float(order.executed.size)),
+            }
+            if order.isbuy():
+                self._last_entry = info
+            else:
+                self._last_exit = info
         elif order.status == order.Canceled:
             self.log("ORDER CANCELED")
         elif order.status == order.Margin:
@@ -52,34 +65,39 @@ class BaseStrategy(bt.Strategy):
         if not trade.isclosed:
             return
 
-        # In some edge cases trade.history may be empty. Fall back to
-        # direct attributes, which Backtrader always populates.
-        if trade.history:
-            entry_dt = trade.history[0].event.dt
-            exit_dt = trade.history[-1].event.dt
-            entry_price = float(trade.history[0].event.price)
-            exit_price = float(trade.history[-1].event.price)
-            closed_size = abs(float(trade.history[-1].event.size))
+        # Use the orders captured in notify_order; fall back to trade
+        # attributes if a signal went missing (should not happen).
+        if self._last_entry and self._last_exit:
+            entry_time = self._last_entry["time"]
+            entry_price = self._last_entry["price"]
+            size = self._last_entry["size"]
+            exit_time = self._last_exit["time"]
+            exit_price = self._last_exit["price"]
         else:
-            entry_dt = trade.dtopen
-            exit_dt = trade.dtclose
-            entry_price = float(trade.price)
-            exit_price = float(trade.price)
-            closed_size = abs(float(trade.size)) or 0.0
+            entry_time = bt.num2date(trade.dtopen)
+            exit_time = bt.num2date(trade.dtclose)
+            entry_price = float(trade.price) if trade.price else 0.0
+            exit_price = entry_price
+            size = 0.0
 
-        position_value = entry_price * closed_size
-        pnl_pct = (trade.pnlcomm / position_value * 100) if position_value else 0.0
+        position_value = entry_price * size
+        pnl_pct = (
+            (trade.pnlcomm / position_value * 100) if position_value else 0.0
+        )
 
         self.trade_log.append(
             {
-                "entry_time": bt.num2date(entry_dt).isoformat(),
-                "exit_time": bt.num2date(exit_dt).isoformat(),
+                "entry_time": entry_time.isoformat(),
+                "exit_time": exit_time.isoformat(),
                 "entry_price": entry_price,
                 "exit_price": exit_price,
-                "size": closed_size,
+                "size": size,
                 "bars_held": int(trade.barlen),
                 "pnl": float(trade.pnl),
                 "pnl_net": float(trade.pnlcomm),
                 "pnl_percent": float(pnl_pct),
             }
         )
+
+        self._last_entry = None
+        self._last_exit = None
