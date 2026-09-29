@@ -1,14 +1,19 @@
-"""Backtest service: load data, run a strategy, return metrics."""
+"""Backtest service: load data, run a strategy, persist, return metrics."""
 
 import logging
 import math
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 import backtrader as bt
 import numpy as np
 
 from app.backtest.feed import df_to_bt_feed
+from app.db.session import SessionLocal
+from app.models.backtest import Backtest
+from app.models.backtest_equity import BacktestEquity
+from app.models.backtest_trade import BacktestTrade
 from app.schemas.backtest import (
     BacktestRequest,
     BacktestResult,
@@ -59,6 +64,7 @@ def _safe_float(x: Any, default: float = 0.0) -> float:
 def _empty_result(request: BacktestRequest, params: dict) -> BacktestResult:
     """Build a zero-filled result for an empty data range."""
     return BacktestResult(
+        id=None,
         symbol=request.symbol,
         timeframe=request.timeframe,
         start=request.start,
@@ -86,10 +92,7 @@ def _empty_result(request: BacktestRequest, params: dict) -> BacktestResult:
 
 
 def _compute_sortino(returns: list[float]) -> float:
-    """Annualized Sortino ratio from per-bar returns.
-
-    Sortino uses only negative returns for the denominator.
-    """
+    """Annualized Sortino ratio from per-bar returns."""
     if not returns:
         return 0.0
     arr = np.asarray(returns, dtype=float)
@@ -121,8 +124,68 @@ def _compute_cagr(initial: float, final: float, start: date, end: date) -> float
     return (final / initial) ** (1.0 / years) - 1.0
 
 
+def _persist_result(request: BacktestRequest, result: BacktestResult) -> int:
+    """Save a Backtest with its trades and equity. Returns the new id."""
+    with SessionLocal() as db:
+        bt_row = Backtest(
+            symbol=result.symbol,
+            timeframe=result.timeframe,
+            start_date=datetime.combine(result.start, datetime.min.time()),
+            end_date=datetime.combine(result.end, datetime.min.time()),
+            strategy=result.strategy,
+            params=result.params,
+            cash=Decimal(str(request.cash)),
+            commission=Decimal(str(request.commission)),
+            bars=result.bars,
+            trades_count=result.trades,
+            final_value=Decimal(str(result.final_value)),
+            pnl=Decimal(str(result.pnl)),
+            pnl_percent=Decimal(str(result.pnl_percent)),
+            cagr=Decimal(str(result.cagr)),
+            sharpe=Decimal(str(result.sharpe)),
+            sortino=Decimal(str(result.sortino)),
+            calmar=Decimal(str(result.calmar)),
+            max_drawdown=Decimal(str(result.max_drawdown)),
+            win_rate=Decimal(str(result.win_rate)),
+            profit_factor=Decimal(str(result.profit_factor)),
+            avg_win=Decimal(str(result.avg_win)),
+            avg_loss=Decimal(str(result.avg_loss)),
+            exposure=Decimal(str(result.exposure)),
+        )
+        db.add(bt_row)
+        db.flush()  # get bt_row.id before creating related rows
+
+        for t in result.trades_list:
+            db.add(
+                BacktestTrade(
+                    backtest_id=bt_row.id,
+                    entry_time=t.entry_time,
+                    exit_time=t.exit_time,
+                    entry_price=Decimal(str(t.entry_price)),
+                    exit_price=Decimal(str(t.exit_price)),
+                    size=Decimal(str(t.size)),
+                    bars_held=t.bars_held,
+                    pnl=Decimal(str(t.pnl)),
+                    pnl_net=Decimal(str(t.pnl_net)),
+                    pnl_percent=Decimal(str(t.pnl_percent)),
+                )
+            )
+
+        for p in result.equity_curve:
+            db.add(
+                BacktestEquity(
+                    backtest_id=bt_row.id,
+                    timestamp=p.timestamp,
+                    value=Decimal(str(p.value)),
+                )
+            )
+
+        db.commit()
+        return bt_row.id
+
+
 def run_backtest(request: BacktestRequest) -> BacktestResult:
-    """Load candles, run the strategy, return extended metrics."""
+    """Load candles, run the strategy, persist, return extended metrics."""
     if request.strategy not in STRATEGY_REGISTRY:
         raise ValueError(f"Unknown strategy: {request.strategy}")
 
@@ -146,15 +209,11 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     cerebro.broker.setcommission(commission=request.commission)
     cerebro.addsizer(bt.sizers.PercentSizer, percents=95)
 
-    # Track portfolio value on every bar for the equity curve.
     cerebro.addobserver(bt.observers.Value)
-
     cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name="dd")
     cerebro.addanalyzer(
-        bt.analyzers.TimeReturn,
-        _name="returns",
-        timeframe=bt.TimeFrame.Days,
+        bt.analyzers.TimeReturn, _name="returns", timeframe=bt.TimeFrame.Days
     )
     cerebro.addanalyzer(
         bt.analyzers.SharpeRatio,
@@ -177,7 +236,6 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
 
     total = int(ta.get("total", {}).get("closed", 0) or 0)
     won = int(ta.get("won", {}).get("total", 0) or 0)
-    lost = int(ta.get("lost", {}).get("total", 0) or 0)
 
     won_pnl_total = _safe_float(ta.get("won", {}).get("pnl", {}).get("total", 0.0))
     lost_pnl_total = _safe_float(ta.get("lost", {}).get("pnl", {}).get("total", 0.0))
@@ -186,22 +244,18 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
 
     gross_loss = abs(lost_pnl_total)
     profit_factor = (won_pnl_total / gross_loss) if gross_loss > 0 else 0.0
-
     win_rate = (won / total) if total else 0.0
 
     max_dd = _safe_float(dd.get("max", {}).get("drawdown", 0.0))
     sharpe = _safe_float(sharpe_an.get("sharperatio"))
 
-    # Per-bar returns for Sortino.
     returns_list = [float(v) for v in returns_an.values()]
     sortino = _compute_sortino(returns_list)
 
     cagr = _compute_cagr(start_value, final_value, request.start, request.end)
     calmar = (cagr / (max_dd / 100.0)) if max_dd > 0 else 0.0
-
     exposure = strat.bars_in_market / len(strat) if len(strat) > 0 else 0.0
 
-    # Equity curve: one value per bar, plus timestamps.
     values_arr = list(strat.observers.value.lines.value.array)
     dts_arr = list(strat.datas[0].datetime.array)
     equity_curve = [
@@ -211,7 +265,8 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
 
     trades_list = [TradeInfo(**t) for t in strat.trade_log]
 
-    return BacktestResult(
+    result = BacktestResult(
+        id=None,
         symbol=request.symbol,
         timeframe=request.timeframe,
         start=request.start,
@@ -236,3 +291,7 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
         equity_curve=equity_curve,
         trades_list=trades_list,
     )
+
+    # Persist the run to DB and attach its id.
+    result.id = _persist_result(request, result)
+    return result

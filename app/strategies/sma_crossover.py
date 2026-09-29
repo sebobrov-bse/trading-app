@@ -19,20 +19,17 @@ class SmaCrossover(BaseStrategy):
 
     def __init__(self) -> None:
         super().__init__()
-        self.fast_sma = bt.indicators.SMA(
-            self.data.close, period=self.p.fast
-        )
-        self.slow_sma = bt.indicators.SMA(
-            self.data.close, period=self.p.slow
-        )
+        self.fast_sma = bt.indicators.SMA(self.data.close, period=self.p.fast)
+        self.slow_sma = bt.indicators.SMA(self.data.close, period=self.p.slow)
         # crossover > 0: fast crossed above slow (BUY signal)
         # crossover < 0: fast crossed below slow (SELL signal)
-        self.crossover = bt.indicators.CrossOver(
-            self.fast_sma, self.slow_sma
-        )
+        self.crossover = bt.indicators.CrossOver(self.fast_sma, self.slow_sma)
 
     def next(self) -> None:
         """Called by the engine on each bar."""
+        if self.position:
+            self.bars_in_market += 1
+
         if self.order:
             return  # order in flight, wait
 
