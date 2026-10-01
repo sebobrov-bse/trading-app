@@ -5,6 +5,7 @@ from app.schemas.backtest import (
     BacktestRequest,
     BacktestResult,
     EquityPoint,
+    TopStrategyItem,
     TradeInfo,
 )
 from app.schemas.candle import CandleCreate, CandleListResponse, CandleRead
@@ -34,5 +35,6 @@ __all__ = [
     "HealthResponse",
     "LoadReport",
     "LoadRequest",
+    "TopStrategyItem",
     "TradeInfo",
 ]

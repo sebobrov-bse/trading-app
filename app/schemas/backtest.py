@@ -7,9 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class BacktestRequest(BaseModel):
     """Request body for POST /api/v1/backtest/run."""
 
-    symbol: str = Field(
-        ..., min_length=2, max_length=20, pattern=r"^[A-Z][A-Z0-9]*$"
-    )
+    symbol: str = Field(..., min_length=2, max_length=20, pattern=r"^[A-Z][A-Z0-9]*$")
     timeframe: Literal[1, 10, 60, 24] = 24
     start: date
     end: date
@@ -121,3 +119,13 @@ class BacktestDetails(BaseModel):
     created_at: datetime
     trades_list: list[TradeInfo] = []
     equity_curve: list[EquityPoint] = []
+
+
+class TopStrategyItem(BaseModel):
+    """One strategy in the top-N aggregate."""
+
+    strategy: str
+    count: int
+    avg_sharpe: float
+    avg_pnl: float
+    avg_max_drawdown: float

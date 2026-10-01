@@ -16,9 +16,11 @@ from app.schemas.backtest import (
     BacktestRequest,
     BacktestResult,
     EquityPoint,
+    TopStrategyItem,
     TradeInfo,
 )
 from app.services.backtest_service import STRATEGY_REGISTRY, run_backtest
+
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 
@@ -30,8 +32,7 @@ async def run_backtest_endpoint(request: BacktestRequest) -> BacktestResult:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Unknown strategy '{request.strategy}'. "
-                f"Available: {sorted(STRATEGY_REGISTRY)}"
+                f"Unknown strategy '{request.strategy}'. Available: {sorted(STRATEGY_REGISTRY)}"
             ),
         )
 
@@ -39,6 +40,38 @@ async def run_backtest_endpoint(request: BacktestRequest) -> BacktestResult:
         return await run_in_threadpool(run_backtest, request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/top-strategies", response_model=list[TopStrategyItem])
+def top_strategies(
+    limit: int = Query(3, ge=1, le=20),
+    db: Session = Depends(get_db),
+) -> list[TopStrategyItem]:
+    """Aggregate backtests by strategy, sorted by average Sharpe."""
+    stmt = (
+        select(
+            Backtest.strategy.label("strategy"),
+            func.count(Backtest.id).label("count"),
+            func.avg(Backtest.sharpe).label("avg_sharpe"),
+            func.avg(Backtest.pnl).label("avg_pnl"),
+            func.avg(Backtest.max_drawdown).label("avg_max_drawdown"),
+        )
+        .group_by(Backtest.strategy)
+        .order_by(func.avg(Backtest.sharpe).desc())
+        .limit(limit)
+    )
+    rows = db.execute(stmt).all()
+
+    return [
+        TopStrategyItem(
+            strategy=r.strategy,
+            count=r.count,
+            avg_sharpe=float(r.avg_sharpe or 0),
+            avg_pnl=float(r.avg_pnl or 0),
+            avg_max_drawdown=float(r.avg_max_drawdown or 0),
+        )
+        for r in rows
+    ]
 
 
 @router.get("/history", response_model=BacktestHistoryResponse)
@@ -86,17 +119,25 @@ def backtest_details(
     if bt_row is None:
         raise HTTPException(status_code=404, detail="Backtest not found")
 
-    trades = db.execute(
-        select(BacktestTrade)
-        .where(BacktestTrade.backtest_id == backtest_id)
-        .order_by(BacktestTrade.entry_time)
-    ).scalars().all()
+    trades = (
+        db.execute(
+            select(BacktestTrade)
+            .where(BacktestTrade.backtest_id == backtest_id)
+            .order_by(BacktestTrade.entry_time)
+        )
+        .scalars()
+        .all()
+    )
 
-    equity = db.execute(
-        select(BacktestEquity)
-        .where(BacktestEquity.backtest_id == backtest_id)
-        .order_by(BacktestEquity.timestamp)
-    ).scalars().all()
+    equity = (
+        db.execute(
+            select(BacktestEquity)
+            .where(BacktestEquity.backtest_id == backtest_id)
+            .order_by(BacktestEquity.timestamp)
+        )
+        .scalars()
+        .all()
+    )
 
     details = BacktestDetails.model_validate(bt_row)
     details.trades_list = [
