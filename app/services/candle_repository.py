@@ -39,9 +39,7 @@ class CandleRepository:
             rows = db.execute(stmt).scalars().all()
 
         if not rows:
-            return pd.DataFrame(
-                columns=["open", "high", "low", "close", "volume"]
-            )
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
         df = pd.DataFrame(
             {
@@ -56,3 +54,58 @@ class CandleRepository:
         df.set_index("datetime", inplace=True)
         df.index = pd.to_datetime(df.index)
         return df
+
+    def get_summary(
+        self,
+        symbol: str | None = None,
+        timeframe: int | None = None,
+    ) -> list[dict]:
+        """Return a summary per (symbol, timeframe) using SQL aggregates.
+
+        Using COUNT/MIN/MAX in SQL is much faster than loading all rows
+        and computing in Python — especially on large tables.
+        """
+        from sqlalchemy import func
+
+        with SessionLocal() as db:
+            stmt = (
+                select(
+                    Candle.symbol,
+                    Candle.timeframe,
+                    func.count(Candle.id).label("candles_count"),
+                    func.min(Candle.timestamp).label("first_timestamp"),
+                    func.max(Candle.timestamp).label("last_timestamp"),
+                )
+                .group_by(Candle.symbol, Candle.timeframe)
+                .order_by(Candle.symbol, Candle.timeframe)
+            )
+            if symbol:
+                stmt = stmt.where(Candle.symbol == symbol)
+            if timeframe:
+                stmt = stmt.where(Candle.timeframe == timeframe)
+
+            rows = db.execute(stmt).all()
+
+        return [
+            {
+                "symbol": r.symbol,
+                "timeframe": r.timeframe,
+                "candles_count": r.candles_count,
+                "first_timestamp": r.first_timestamp,
+                "last_timestamp": r.last_timestamp,
+            }
+            for r in rows
+        ]
+
+    def delete_candles(self, symbol: str, timeframe: int) -> int:
+        """Delete all candles for a (symbol, timeframe). Returns count."""
+        from sqlalchemy import delete as sa_delete
+
+        with SessionLocal() as db:
+            stmt = sa_delete(Candle).where(
+                Candle.symbol == symbol,
+                Candle.timeframe == timeframe,
+            )
+            result = db.execute(stmt)
+            db.commit()
+            return result.rowcount or 0
