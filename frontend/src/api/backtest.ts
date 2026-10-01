@@ -4,6 +4,7 @@ import type {
   BacktestHistoryResponse,
   BacktestRequest,
   BacktestResult,
+  TopStrategyItem,
 } from './types';
 
 export function runBacktest(request: BacktestRequest): Promise<BacktestResult> {
@@ -33,4 +34,8 @@ export function getBacktest(id: number): Promise<BacktestDetails> {
 
 export function deleteBacktest(id: number): Promise<void> {
   return apiDelete(`/backtest/${id}`);
+}
+
+export function getTopStrategies(limit = 3): Promise<TopStrategyItem[]> {
+  return apiGet<TopStrategyItem[]>(`/backtest/top-strategies?limit=${limit}`);
 }

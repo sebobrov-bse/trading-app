@@ -127,3 +127,48 @@ export interface BacktestDetails {
   trades_list: TradeInfo[];
   equity_curve: EquityPoint[];
 }
+export interface LoadRequest {
+  symbol: string;
+  timeframe: number;
+  start: string;
+  end: string;
+}
+
+export interface LoadReport {
+  symbol: string;
+  timeframe: number;
+  start: string;
+  end: string;
+  fetched: number;
+  inserted: number;
+  duplicates_skipped: number;
+  duration_seconds: number;
+}
+
+export interface DataSummaryItem {
+  symbol: string;
+  timeframe: number;
+  candles_count: number;
+  first_timestamp: string;
+  last_timestamp: string;
+}
+
+export interface DataSummaryResponse {
+  items: DataSummaryItem[];
+  total_symbols: number;
+  total_candles: number;
+}
+
+export interface DeleteResponse {
+  symbol: string;
+  timeframe: number;
+  deleted: number;
+}
+
+export interface TopStrategyItem {
+  strategy: string;
+  count: number;
+  avg_sharpe: number;
+  avg_pnl: number;
+  avg_max_drawdown: number;
+}
