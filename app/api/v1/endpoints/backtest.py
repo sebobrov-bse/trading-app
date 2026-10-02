@@ -15,11 +15,35 @@ from app.schemas.backtest import (
     BacktestHistoryResponse,
     BacktestRequest,
     BacktestResult,
+    CompareResponse,
     EquityPoint,
     TopStrategyItem,
     TradeInfo,
 )
-from app.services.backtest_service import STRATEGY_REGISTRY, run_backtest
+from app.services.backtest_service import (
+    STRATEGY_REGISTRY,
+    compare_backtests,
+    run_backtest,
+)
+
+
+def parse_ids(ids: str) -> list[int]:
+    """Parse comma-separated ids into a list of ints.
+
+    Raises HTTPException(400) on invalid input.
+    """
+    try:
+        result = [int(x.strip()) for x in ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="ids must be comma-separated integers",
+        )
+    if len(result) < 2:
+        raise HTTPException(status_code=400, detail="at least 2 ids required")
+    if len(result) > 5:
+        raise HTTPException(status_code=400, detail="at most 5 ids allowed")
+    return result
 
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
@@ -107,6 +131,18 @@ def backtest_history(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/compare", response_model=CompareResponse)
+def compare(
+    ids: str = Query(..., description="Comma-separated backtest ids (2-5)"),
+) -> CompareResponse:
+    """Compare multiple backtests side by side."""
+    parsed = parse_ids(ids)
+    try:
+        return compare_backtests(parsed)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/{backtest_id}", response_model=BacktestDetails)

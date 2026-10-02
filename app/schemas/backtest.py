@@ -129,3 +129,46 @@ class TopStrategyItem(BaseModel):
     avg_sharpe: float
     avg_pnl: float
     avg_max_drawdown: float
+
+
+class BacktestMetrics(BaseModel):
+    """Aggregated metrics of a backtest (no trades, no equity)."""
+
+    pnl: float
+    pnl_percent: float
+    cagr: float
+    sharpe: float
+    sortino: float
+    calmar: float
+    max_drawdown: float
+    win_rate: float
+    profit_factor: float
+    trades_count: int
+
+
+class BacktestForCompare(BaseModel):
+    """One backtest in the comparison response."""
+
+    id: int
+    symbol: str
+    timeframe: int
+    start: date
+    end: date
+    strategy: str
+    params: dict[str, Any]
+    metrics: BacktestMetrics
+    equity_curve: list[EquityPoint]
+
+
+class CommonPeriod(BaseModel):
+    """Minimal covering period across compared backtests."""
+
+    start: date
+    end: date
+
+
+class CompareResponse(BaseModel):
+    """Response of GET /api/v1/backtest/compare."""
+
+    backtests: list[BacktestForCompare]
+    common_period: CommonPeriod

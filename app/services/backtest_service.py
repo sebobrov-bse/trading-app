@@ -8,6 +8,8 @@ from typing import Any
 
 import backtrader as bt
 import numpy as np
+from sqlalchemy import select
+
 
 from app.backtest.feed import df_to_bt_feed
 from app.db.session import SessionLocal
@@ -15,8 +17,12 @@ from app.models.backtest import Backtest
 from app.models.backtest_equity import BacktestEquity
 from app.models.backtest_trade import BacktestTrade
 from app.schemas.backtest import (
+    BacktestForCompare,
+    BacktestMetrics,
     BacktestRequest,
     BacktestResult,
+    CommonPeriod,
+    CompareResponse,
     EquityPoint,
     TradeInfo,
 )
@@ -212,9 +218,7 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     cerebro.addobserver(bt.observers.Value)
     cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name="dd")
-    cerebro.addanalyzer(
-        bt.analyzers.TimeReturn, _name="returns", timeframe=bt.TimeFrame.Days
-    )
+    cerebro.addanalyzer(bt.analyzers.TimeReturn, _name="returns", timeframe=bt.TimeFrame.Days)
     cerebro.addanalyzer(
         bt.analyzers.SharpeRatio,
         _name="sharpe",
@@ -295,3 +299,72 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     # Persist the run to DB and attach its id.
     result.id = _persist_result(request, result)
     return result
+
+
+def compare_backtests(ids: list[int]) -> CompareResponse:
+    """Load backtests with metrics and equity curves for comparison.
+
+    Uses exactly two queries (no N+1):
+    - one for backtests,
+    - one for all equity points across requested ids.
+
+    Raises ValueError if some ids are not found.
+    """
+    with SessionLocal() as db:
+        # Query 1: all backtests in one shot.
+        bt_stmt = select(Backtest).where(Backtest.id.in_(ids))
+        rows = db.execute(bt_stmt).scalars().all()
+
+        found_ids = {r.id for r in rows}
+        missing = [i for i in ids if i not in found_ids]
+        if missing:
+            raise ValueError(f"Backtests not found: {missing}")
+
+        # Query 2: all equity points for all requested ids.
+        eq_stmt = (
+            select(BacktestEquity)
+            .where(BacktestEquity.backtest_id.in_(ids))
+            .order_by(BacktestEquity.backtest_id, BacktestEquity.timestamp)
+        )
+        equity_rows = db.execute(eq_stmt).scalars().all()
+
+    # Group equity by backtest_id (in Python).
+    equity_by_bt: dict[int, list[EquityPoint]] = {i: [] for i in ids}
+    for e in equity_rows:
+        equity_by_bt[e.backtest_id].append(EquityPoint(timestamp=e.timestamp, value=float(e.value)))
+
+    # Preserve the order the user asked for.
+    by_id = {r.id: r for r in rows}
+    backtests = [
+        BacktestForCompare(
+            id=bt.id,
+            symbol=bt.symbol,
+            timeframe=bt.timeframe,
+            start=bt.start_date.date(),
+            end=bt.end_date.date(),
+            strategy=bt.strategy,
+            params=bt.params,
+            metrics=BacktestMetrics(
+                pnl=float(bt.pnl),
+                pnl_percent=float(bt.pnl_percent),
+                cagr=float(bt.cagr),
+                sharpe=float(bt.sharpe),
+                sortino=float(bt.sortino),
+                calmar=float(bt.calmar),
+                max_drawdown=float(bt.max_drawdown),
+                win_rate=float(bt.win_rate),
+                profit_factor=float(bt.profit_factor),
+                trades_count=bt.trades_count,
+            ),
+            equity_curve=equity_by_bt[bt.id],
+        )
+        for bt in (by_id[i] for i in ids)
+    ]
+
+    common_start = max(b.start for b in backtests)
+    common_end = min(b.end for b in backtests)
+
+    return CompareResponse(
+        backtests=backtests,
+        common_period=CommonPeriod(start=common_start, end=common_end),
+    )

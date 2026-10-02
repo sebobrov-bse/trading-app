@@ -1,9 +1,13 @@
 from app.schemas.backtest import (
     BacktestDetails,
+    BacktestForCompare,
     BacktestHistoryItem,
     BacktestHistoryResponse,
+    BacktestMetrics,
     BacktestRequest,
     BacktestResult,
+    CommonPeriod,
+    CompareResponse,
     EquityPoint,
     TopStrategyItem,
     TradeInfo,
@@ -37,4 +41,8 @@ __all__ = [
     "LoadRequest",
     "TopStrategyItem",
     "TradeInfo",
+    "BacktestForCompare",
+    "BacktestMetrics",
+    "CommonPeriod",
+    "CompareResponse",
 ]
