@@ -79,6 +79,7 @@ class MoexIssProvider(MarketDataProvider):
         payload: dict,
         ticker: str,
         timeframe: int,
+        asset_type: str = "stock",
     ) -> list[Candle]:
         """Convert MOEX candles block into a list of Candle objects."""
         block = payload.get("candles") or {}
@@ -94,6 +95,7 @@ class MoexIssProvider(MarketDataProvider):
             candles.append(
                 Candle(
                     ticker=ticker,
+                    asset_type=asset_type,
                     timeframe=timeframe,
                     begin=datetime.strptime(record["begin"], "%Y-%m-%d %H:%M:%S"),
                     end=datetime.strptime(record["end"], "%Y-%m-%d %H:%M:%S"),
@@ -139,7 +141,7 @@ class MoexIssProvider(MarketDataProvider):
                 }
 
                 payload = await self._fetch_with_retry(client, url, params)
-                page = self._parse_response(payload, ticker, timeframe)
+                page = self._parse_response(payload, ticker, timeframe, asset_type="stock")
 
                 if not page:
                     break
@@ -240,7 +242,7 @@ class MoexIssProvider(MarketDataProvider):
                 }
 
                 payload = await self._fetch_with_retry(client, url, params)
-                page = self._parse_response(payload, secid, timeframe)
+                page = self._parse_response(payload, secid, timeframe, asset_type="future")
 
                 if not page:
                     break
