@@ -6,6 +6,14 @@ import httpx
 from app.data_providers.base import MarketDataProvider
 from app.data_providers.moex_iss.models import Candle
 
+
+from decimal import Decimal
+
+from app.data_providers.moex_iss.futures import (
+    FUTURES_BASE_MAP,
+    FuturesContract,
+)
+
 BASE_URL = "https://iss.moex.com/iss"
 
 # Supported timeframes (minutes per candle). Same values as MOEX intervals.
@@ -31,10 +39,7 @@ class MoexIssProvider(MarketDataProvider):
 
     def _build_url(self, ticker: str) -> str:
         """Build the candles endpoint URL for a ticker."""
-        return (
-            f"{self._base_url}/engines/stock/markets/shares"
-            f"/securities/{ticker}/candles.json"
-        )
+        return f"{self._base_url}/engines/stock/markets/shares/securities/{ticker}/candles.json"
 
     async def _fetch_with_retry(
         self,
@@ -116,8 +121,7 @@ class MoexIssProvider(MarketDataProvider):
         """
         if timeframe not in SUPPORTED_TIMEFRAMES:
             raise ValueError(
-                f"Unsupported timeframe: {timeframe}. "
-                f"Supported: {sorted(SUPPORTED_TIMEFRAMES)}"
+                f"Unsupported timeframe: {timeframe}. Supported: {sorted(SUPPORTED_TIMEFRAMES)}"
             )
 
         url = self._build_url(ticker)
@@ -143,6 +147,106 @@ class MoexIssProvider(MarketDataProvider):
                 all_candles.extend(page)
 
                 # Partial page means we've reached the end of the range.
+                if len(page) < PAGE_SIZE:
+                    break
+
+                offset += PAGE_SIZE
+                await asyncio.sleep(PAGE_DELAY)
+
+        return all_candles
+
+    async def fetch_futures_list(self) -> list[FuturesContract]:
+        """Fetch all active futures contracts with metadata.
+
+        Uses /iss/engines/futures/markets/forts/securities.json.
+        Returns only contracts whose ASSETCODE is in FUTURES_BASE_MAP.
+        """
+        url = f"{self._base_url}/engines/futures/markets/forts/securities.json"
+        params = {"iss.meta": "off"}
+
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            payload = await self._fetch_with_retry(client, url, params)
+
+        block = payload.get("securities") or {}
+        columns = block.get("columns") or []
+        data = block.get("data") or []
+
+        if not columns or not data:
+            return []
+
+        # Column indexes (order is guaranteed by MOEX but we look them up).
+        i_secid = columns.index("SECID")
+        i_short = columns.index("SHORTNAME")
+        i_asset = columns.index("ASSETCODE")
+        i_exp = columns.index("LASTTRADEDATE")
+        i_lot = columns.index("LOTVOLUME")
+        i_step = columns.index("MINSTEP")
+        i_step_price = columns.index("STEPPRICE")
+
+        contracts: list[FuturesContract] = []
+        for row in data:
+            asset_code = row[i_asset]
+            base_asset = FUTURES_BASE_MAP.get(asset_code)
+            if base_asset is None:
+                continue
+
+            exp_raw = row[i_exp]
+            if not exp_raw:
+                continue
+
+            contracts.append(
+                FuturesContract(
+                    secid=row[i_secid],
+                    shortname=row[i_short],
+                    asset_code=asset_code,
+                    base_asset=base_asset,
+                    expiration_date=datetime.strptime(exp_raw, "%Y-%m-%d").date(),
+                    contract_multiplier=Decimal(str(row[i_lot])),
+                    tick_size=Decimal(str(row[i_step])),
+                    tick_value=Decimal(str(row[i_step_price])),
+                )
+            )
+
+        return contracts
+
+    async def fetch_futures_candles(
+        self,
+        secid: str,
+        timeframe: int,
+        start: date,
+        end: date,
+    ) -> list[Candle]:
+        """Fetch candles for a futures contract.
+
+        Uses SECID (internal code, e.g. SRH7), NOT shortname.
+        """
+        if timeframe not in SUPPORTED_TIMEFRAMES:
+            raise ValueError(
+                f"Unsupported timeframe: {timeframe}. Supported: {sorted(SUPPORTED_TIMEFRAMES)}"
+            )
+
+        url = f"{self._base_url}/engines/futures/markets/forts/securities/{secid}/candles.json"
+        all_candles: list[Candle] = []
+        offset = 0
+
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            while True:
+                params = {
+                    "from": start.isoformat(),
+                    "till": end.isoformat(),
+                    "interval": timeframe,
+                    "start": offset,
+                    "iss.meta": "off",
+                }
+
+                payload = await self._fetch_with_retry(client, url, params)
+                page = self._parse_response(payload, secid, timeframe)
+
+                if not page:
+                    break
+
+                all_candles.extend(page)
+
                 if len(page) < PAGE_SIZE:
                     break
 
