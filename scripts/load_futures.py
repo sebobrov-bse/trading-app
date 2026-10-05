@@ -21,7 +21,7 @@ import argparse
 import asyncio
 import logging
 from datetime import date, datetime
-from typing import Sequence
+from app.services.continuous import ContinuousSeriesBuilder
 
 from app.data_providers.moex_iss.client import MoexIssProvider
 from app.data_providers.moex_iss.futures import FuturesContract
@@ -50,6 +50,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="load_futures",
         description="Load MOEX futures contracts and specs into SQLite.",
+    )
+    parser.add_argument(
+        "--continuous",
+        type=str,
+        help="Build a continuous series for BASE (e.g. SBER → SBERF).",
+    )
+    parser.add_argument(
+        "--continuous-symbol",
+        type=str,
+        help="Output symbol for the continuous series (default: <BASE>F).",
+    )
+    parser.add_argument(
+        "--method",
+        choices=["concat", "ratio"],
+        default="ratio",
+        help="Concatenation method for continuous series (default: ratio).",
+    )
+    parser.add_argument(
+        "--roll-offset",
+        type=int,
+        default=5,
+        help="Roll to next contract N days before expiration (default: 5).",
     )
     parser.add_argument(
         "--list",
@@ -119,7 +141,67 @@ def pick_contracts(
     return []
 
 
+async def run_continuous(args: argparse.Namespace) -> int:
+    """Build a continuous series and save it to candles."""
+    base_asset = args.continuous.upper()
+    out_symbol = (args.continuous_symbol or f"{base_asset}F").upper()
+
+    if args.start is None:
+        logger.error("--start is required for --continuous.")
+        return 1
+
+    logger.info(
+        "Building continuous series for %s -> %s (method=%s, roll=%sd)",
+        base_asset,
+        out_symbol,
+        args.method,
+        args.roll_offset,
+    )
+
+    builder = ContinuousSeriesBuilder(
+        base_asset=base_asset,
+        roll_offset_days=args.roll_offset,
+    )
+    df = builder.build(
+        timeframe=args.timeframe,
+        start=args.start,
+        end=args.end,
+        method=args.method,
+    )
+
+    logger.info("Built %s rows, %s rolls.", len(df), len(builder.roll_events()))
+    for r in builder.roll_events():
+        logger.info(
+            "  %s: %s -> %s (ratio=%.4f)",
+            r.date,
+            r.old_secid,
+            r.new_secid,
+            r.ratio,
+        )
+
+    provider = MoexIssProvider()
+    loader = DataLoader(provider)
+    report = loader.save_dataframe(
+        df=df,
+        symbol=out_symbol,
+        asset_type="continuous",
+        timeframe=args.timeframe,
+        replace=True,
+    )
+    logger.info(
+        "Saved %s: fetched=%s, inserted=%s, skipped=%s, duration=%.2fs",
+        out_symbol,
+        report.fetched,
+        report.inserted,
+        report.duplicates_skipped,
+        report.duration_seconds,
+    )
+    return 0
+
+
 async def run(args: argparse.Namespace) -> int:
+    if args.continuous:
+        return await run_continuous(args)
     provider = MoexIssProvider()
 
     logger.info("Fetching list of active futures from MOEX ISS...")

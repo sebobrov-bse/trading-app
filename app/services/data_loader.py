@@ -373,3 +373,93 @@ class DataLoader:
                 existing.is_active = True
 
             db.commit()
+
+    def save_dataframe(
+        self,
+        df: "pd.DataFrame",
+        symbol: str,
+        asset_type: str,
+        timeframe: int,
+        replace: bool = False,
+    ) -> LoadReport:
+        """Upsert a DataFrame (from ContinuousSeriesBuilder) into candles.
+
+        Expected columns: timestamp, open, high, low, close, volume.
+        `symbol` overrides the per-row secid — the series is saved
+        under a single symbol like SBERF.
+
+        If `replace=True`, first deletes all existing rows with the same
+        (symbol, asset_type, timeframe) and then inserts. Use it for
+        continuous series, which are rebuilt atomically.
+        """
+        t0 = time.perf_counter()
+        if df.empty:
+            return LoadReport(
+                fetched=0,
+                inserted=0,
+                duplicates_skipped=0,
+                duration_seconds=0.0,
+            )
+
+        rows: list[dict] = []
+        for _, r in df.iterrows():
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "asset_type": asset_type,
+                    "timeframe": timeframe,
+                    "timestamp": r["timestamp"],
+                    "open": r["open"],
+                    "high": r["high"],
+                    "low": r["low"],
+                    "close": r["close"],
+                    "volume": int(r["volume"]),
+                    "value": None,
+                }
+            )
+
+        from sqlalchemy import delete as sa_delete
+
+        inserted = 0
+        with SessionLocal() as db:
+            if replace:
+                del_result = db.execute(
+                    sa_delete(CandleORM).where(
+                        CandleORM.symbol == symbol,
+                        CandleORM.asset_type == asset_type,
+                        CandleORM.timeframe == timeframe,
+                    )
+                )
+                logger.info(
+                    "Replacing %s %s: deleted %s old rows.",
+                    symbol,
+                    asset_type,
+                    del_result.rowcount,
+                )
+
+            for i in range(0, len(rows), BATCH_SIZE):
+                batch = rows[i : i + BATCH_SIZE]
+                stmt = sqlite_insert(CandleORM).values(batch)
+                stmt = stmt.on_conflict_do_nothing(
+                    index_elements=["symbol", "asset_type", "timeframe", "timestamp"]
+                )
+                result = db.execute(stmt)
+                inserted += result.rowcount or 0
+            db.commit()
+
+        duration = time.perf_counter() - t0
+        fetched = len(rows)
+        logger.info(
+            "Saved continuous %s %s: fetched=%s, inserted=%s, duration=%.2fs",
+            symbol,
+            timeframe,
+            fetched,
+            inserted,
+            duration,
+        )
+        return LoadReport(
+            fetched=fetched,
+            inserted=inserted,
+            duplicates_skipped=fetched - inserted,
+            duration_seconds=duration,
+        )
