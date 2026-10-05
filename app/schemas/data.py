@@ -7,10 +7,8 @@ from pydantic import BaseModel, Field, model_validator
 class LoadRequest(BaseModel):
     """Request body for POST /api/v1/data/load."""
 
-    symbol: str = Field(
-        ..., min_length=2, max_length=20, pattern=r"^[A-Z][A-Z0-9]*$"
-    )
-    timeframe: Literal[1, 10, 60, 24] = 24
+    symbol: str = Field(..., min_length=2, max_length=20, pattern=r"^[A-Z][A-Z0-9]*$")
+    timeframe: Literal[1, 5, 10, 30, 60, 120, 240, 24] = 24
     start: date
     end: date
 
