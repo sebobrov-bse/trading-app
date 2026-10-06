@@ -47,6 +47,12 @@ class BaseStrategy(bt.Strategy):
         self.risk_config: RiskConfig = cfg
         self.risk: RiskManager | None = RiskManager(self, cfg) if cfg.use_risk_management else None
 
+        # Pre-warm ATR so it's ready when the first signal fires.
+        # Lazy creation inside RiskManager._get_atr() would only start
+        # warming at the first signal, which is too late.
+        if self.risk is not None and cfg.check_atr:
+            self._risk_atr = bt.indicators.ATR(self.data, period=cfg.atr_period)
+
         # ---- bracket order state ----
         self._entry_price: float | None = None
         self._stop_price: float | None = None
@@ -56,6 +62,8 @@ class BaseStrategy(bt.Strategy):
         self._direction: Direction | None = None
         self._breakeven_done: bool = False
         self._trailing_on: bool = False
+        self._entry_bar: int = 0
+        self._initial_risk_per_unit: float = 0.0
 
     # ------------------------------------------------------------------
     #  Logging
@@ -222,6 +230,12 @@ class BaseStrategy(bt.Strategy):
         if not self.position:
             return
 
+        if len(self) <= self._entry_bar:
+            return  # do not touch stops on the entry bar
+
+        if len(self) <= self._entry_bar:
+            return  # not on the entry bar itself
+
         risk = abs(self._entry_price - self._stop_price)
         if risk <= 0:
             return
@@ -291,6 +305,12 @@ class BaseStrategy(bt.Strategy):
 
             self._entry_price = exec_price
             size = abs(int(order.executed.size))
+
+            self._entry_bar = len(self)
+            if self._stop_price is not None:
+                self._initial_risk_per_unit = abs(exec_price - self._stop_price)
+            else:
+                self._initial_risk_per_unit = 0.0
             self.log(
                 f"{side} EXECUTED, "
                 f"price={order.executed.price:.2f}, size={size}, "
@@ -377,11 +397,7 @@ class BaseStrategy(bt.Strategy):
 
         # Update RiskManager.
         if self.risk is not None:
-            risk_per_unit = (
-                abs(self._entry_price - self._stop_price)
-                if self._entry_price is not None and self._stop_price is not None
-                else 0.0
-            )
+            risk_per_unit = self._initial_risk_per_unit
             rr_realized: float | None = None
             if risk_per_unit > 0 and size > 0:
                 rr_realized = float(trade.pnlcomm) / (risk_per_unit * size)
@@ -407,3 +423,5 @@ class BaseStrategy(bt.Strategy):
         self._stop_price = None
         self._tp_price = None
         self._direction = None
+        self._initial_risk_per_unit = 0.0
+        self._entry_bar = 0
