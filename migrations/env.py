@@ -13,6 +13,7 @@ from app.models import (  # noqa: F401
     BacktestEquity,
     BacktestTrade,
     Candle,
+    CustomStrategy,  # ← новая
     InstrumentSpec,
     SystemStatus,
 )

@@ -5,6 +5,7 @@ expiration date, underlying asset. Used for correct PnL calculation
 and continuous series rolling.
 """
 
+import sqlalchemy as sa
 from datetime import datetime
 from decimal import Decimal
 
@@ -37,7 +38,12 @@ class InstrumentSpec(Base):
     tick_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
     expiration_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     base_asset: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=sa.text("1"),
+        nullable=False,
+    )
 
     def __repr__(self) -> str:
         return (

@@ -22,6 +22,15 @@ from app.schemas.data import (
 )
 from app.schemas.health import DBCheckResponse, HealthResponse
 
+from app.schemas.custom_strategy import (
+    CustomStrategyCreate,
+    CustomStrategyImport,
+    CustomStrategyListItem,
+    CustomStrategyListResponse,
+    CustomStrategyRead,
+    CustomStrategyUpdate,
+)
+
 __all__ = [
     "BacktestDetails",
     "BacktestHistoryItem",
@@ -45,4 +54,10 @@ __all__ = [
     "BacktestMetrics",
     "CommonPeriod",
     "CompareResponse",
+    "CustomStrategyCreate",
+    "CustomStrategyImport",
+    "CustomStrategyListItem",
+    "CustomStrategyListResponse",
+    "CustomStrategyRead",
+    "CustomStrategyUpdate",
 ]
