@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.risk.config import RiskConfig
+
 
 class BacktestRequest(BaseModel):
     """Request body for POST /api/v1/backtest/run."""
@@ -15,6 +17,7 @@ class BacktestRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     cash: float = Field(100_000.0, gt=0)
     commission: float = Field(0.001, ge=0, le=0.1)
+    risk_config: RiskConfig | None = None
 
     @model_validator(mode="after")
     def check_dates(self) -> "BacktestRequest":
@@ -65,6 +68,15 @@ class BacktestResult(BaseModel):
     exposure: float
     equity_curve: list[EquityPoint]
     trades_list: list[TradeInfo]
+    # Risk metrics (populated when use_risk_management=True)
+    avg_risk_per_trade: float = 0.0
+    avg_rr_realized: float = 0.0
+    avg_position_size_pct: float = 0.0
+    stops_hit: int = 0
+    take_profits_hit: int = 0
+    max_consecutive_losses: int = 0
+    skipped_by_atr: int = 0
+    skipped_by_daily_limit: int = 0
 
 
 class BacktestHistoryItem(BaseModel):

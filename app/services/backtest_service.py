@@ -94,6 +94,15 @@ def _empty_result(request: BacktestRequest, params: dict) -> BacktestResult:
         exposure=0.0,
         equity_curve=[],
         trades_list=[],
+        # Risk metrics
+        avg_risk_per_trade=0.0,
+        avg_rr_realized=0.0,
+        avg_position_size_pct=0.0,
+        stops_hit=0,
+        take_profits_hit=0,
+        max_consecutive_losses=0,
+        skipped_by_atr=0,
+        skipped_by_daily_limit=0,
     )
 
 
@@ -210,7 +219,13 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
 
     cerebro = bt.Cerebro(runonce=False)
     cerebro.adddata(df_to_bt_feed(df))
-    cerebro.addstrategy(STRATEGY_REGISTRY[request.strategy], **params)
+
+    # Pass risk config to the strategy (or None → default RiskConfig).
+    strategy_kwargs = dict(params)
+    if request.risk_config is not None:
+        strategy_kwargs["risk_config"] = request.risk_config
+
+    cerebro.addstrategy(STRATEGY_REGISTRY[request.strategy], **strategy_kwargs)
     cerebro.broker.setcash(request.cash)
     cerebro.broker.setcommission(commission=request.commission)
     cerebro.addsizer(bt.sizers.PercentSizer, percents=95)
@@ -269,6 +284,12 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
 
     trades_list = [TradeInfo(**t) for t in strat.trade_log]
 
+    # Extract risk stats from the strategy (if any).
+
+    risk_stats: dict = {}
+    if hasattr(strat, "risk") and strat.risk is not None:
+        risk_stats = strat.risk.get_stats()
+
     result = BacktestResult(
         id=None,
         symbol=request.symbol,
@@ -294,6 +315,14 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
         exposure=exposure,
         equity_curve=equity_curve,
         trades_list=trades_list,
+        avg_risk_per_trade=risk_stats.get("avg_risk_per_trade", 0.0),
+        avg_rr_realized=risk_stats.get("avg_rr_realized", 0.0),
+        avg_position_size_pct=risk_stats.get("avg_position_size_pct", 0.0),
+        stops_hit=risk_stats.get("stops_hit", 0),
+        take_profits_hit=risk_stats.get("take_profits_hit", 0),
+        max_consecutive_losses=risk_stats.get("max_consecutive_losses", 0),
+        skipped_by_atr=risk_stats.get("skipped_by_atr", 0),
+        skipped_by_daily_limit=risk_stats.get("skipped_by_daily_limit", 0),
     )
 
     # Persist the run to DB and attach its id.

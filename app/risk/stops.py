@@ -52,11 +52,17 @@ def calculate_stop_price(
 
 
 def _get_atr(strategy: bt.Strategy, period: int) -> float:
-    """Return the latest ATR value, computing the indicator if needed."""
-    # Lazy-create an ATR indicator and cache it on the strategy.
+    """Return the latest ATR value, computing the indicator if needed.
+
+    Returns 0.0 if the indicator has not warmed up yet — callers must
+    treat 0.0 as "ATR not available" and skip the trade.
+    """
     if not hasattr(strategy, "_risk_atr"):
         strategy._risk_atr = bt.indicators.ATR(strategy.data, period=period)
-    value = strategy._risk_atr[0]
+    try:
+        value = strategy._risk_atr[0]
+    except IndexError:
+        return 0.0
     return float(value) if value == value else 0.0  # NaN guard
 
 

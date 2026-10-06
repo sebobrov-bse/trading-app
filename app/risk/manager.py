@@ -200,11 +200,14 @@ class RiskManager:
         # ATR gate: enough room to move.
         if self.config.check_atr:
             entry_price = float(self.strategy.data.close[0])
+            atr = self._get_atr()
+            if atr <= 0:
+                # Indicator not warmed up yet — skip the bar.
+                return False, "atr_not_ready"
             try:
                 stop_price = self.calculate_stop_price(entry_price, direction)
                 distance = abs(entry_price - stop_price)
-                atr = float(self._get_atr())
-                if distance > 0 and atr > 0:
+                if distance > 0:
                     ratio = atr / distance
                     if ratio < self.config.min_atr_to_stop_ratio:
                         self.skipped_by_atr += 1
@@ -259,12 +262,18 @@ class RiskManager:
         return float(self.strategy.broker.getvalue())
 
     def _get_atr(self) -> float:
-        """Return the latest ATR, computing it lazily and caching."""
+        """Return the latest ATR value, computing it lazily and caching.
+
+        Returns 0.0 if the indicator has not warmed up yet.
+        """
         if not hasattr(self.strategy, "_risk_atr"):
             self.strategy._risk_atr = bt.indicators.ATR(
                 self.strategy.data, period=self.config.atr_period
             )
-        value = self.strategy._risk_atr[0]
+        try:
+            value = self.strategy._risk_atr[0]
+        except IndexError:
+            return 0.0
         return float(value) if value == value else 0.0  # NaN guard
 
     def _get_multiplier(self) -> Decimal | None:

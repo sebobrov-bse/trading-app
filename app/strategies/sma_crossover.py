@@ -26,16 +26,18 @@ class SmaCrossover(BaseStrategy):
         self.crossover = bt.indicators.CrossOver(self.fast_sma, self.slow_sma)
 
     def next(self) -> None:
-        """Called by the engine on each bar."""
-        if self.position:
-            self.bars_in_market += 1
+        # BaseStrategy._on_bar_start() already handles:
+        # - bars_in_market counter
+        # - risk.on_new_bar()
+        # - _update_dynamic_levels() (breakeven, trailing)
+        super().next()
 
         if self.order:
-            return  # order in flight, wait
+            return
 
         if not self.position:
             if self.crossover > 0:
-                self.order = self.buy()
+                self.safe_buy(direction="long")
         else:
             if self.crossover < 0:
-                self.order = self.close()
+                self.safe_close()
