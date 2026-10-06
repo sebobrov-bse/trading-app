@@ -172,3 +172,38 @@ export interface TopStrategyItem {
   avg_pnl: number;
   avg_max_drawdown: number;
 }
+
+export interface BacktestMetrics {
+  pnl: number;
+  pnl_percent: number;
+  cagr: number;
+  sharpe: number;
+  sortino: number;
+  calmar: number;
+  max_drawdown: number;
+  win_rate: number;
+  profit_factor: number;
+  trades_count: number;
+}
+
+export interface BacktestForCompare {
+  id: number;
+  symbol: string;
+  timeframe: number;
+  start: string;
+  end: string;
+  strategy: string;
+  params: Record<string, unknown>;
+  metrics: BacktestMetrics;
+  equity_curve: EquityPoint[];
+}
+
+export interface CommonPeriod {
+  start: string;
+  end: string;
+}
+
+export interface CompareResponse {
+  backtests: BacktestForCompare[];
+  common_period: CommonPeriod;
+}
