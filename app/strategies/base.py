@@ -278,10 +278,21 @@ class BaseStrategy(bt.Strategy):
 
         # Entry completed: place stop and take-profit.
         if order.status == order.Completed and order == self.order:
-            self._entry_price = float(order.executed.price)
+            dt = self.datas[0].datetime.datetime(0)
+            side = "BUY" if order.isbuy() else "SELL"
+            exec_size = abs(float(order.executed.size))
+            exec_price = float(order.executed.price)
+
+            info = {"time": dt, "price": exec_price, "size": exec_size}
+            if order.isbuy():
+                self._last_entry = info
+            else:
+                self._last_exit = info
+
+            self._entry_price = exec_price
             size = abs(int(order.executed.size))
             self.log(
-                f"{'BUY' if order.isbuy() else 'SELL'} EXECUTED, "
+                f"{side} EXECUTED, "
                 f"price={order.executed.price:.2f}, size={size}, "
                 f"comm={order.executed.comm:.2f}"
             )
@@ -293,6 +304,16 @@ class BaseStrategy(bt.Strategy):
 
         # Bracket orders: cancel the sibling when one fires.
         elif order.status == order.Completed:
+            dt = self.datas[0].datetime.datetime(0)
+            exec_size = abs(float(order.executed.size))
+            exec_price = float(order.executed.price)
+            info = {"time": dt, "price": exec_price, "size": exec_size}
+
+            if order.isbuy():
+                self._last_entry = info
+            else:
+                self._last_exit = info
+
             if order == self._stop_order:
                 self.log("STOP HIT")
                 if self.risk is not None:

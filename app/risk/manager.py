@@ -105,6 +105,9 @@ class RiskManager:
             self.current_date = bar_date
             self.daily_pnl = 0.0
             self.trades_today = 0
+            # Reset loss streak — "3 losses in a row" applies per day,
+            # not across the whole backtest.
+            self.consecutive_losses = 0
 
         if week_key != self.current_iso_week:
             self.current_iso_week = week_key
@@ -197,21 +200,20 @@ class RiskManager:
             self.skipped_by_consecutive_losses += 1
             return False, "consecutive_losses"
 
-        # ATR gate: enough room to move.
+        # ATR gate: reject stops that are too wide relative to ATR.
         if self.config.check_atr:
             entry_price = float(self.strategy.data.close[0])
             atr = self._get_atr()
             if atr <= 0:
-                # Indicator not warmed up yet — skip the bar.
                 return False, "atr_not_ready"
             try:
                 stop_price = self.calculate_stop_price(entry_price, direction)
                 distance = abs(entry_price - stop_price)
-                if distance > 0:
-                    ratio = atr / distance
-                    if ratio < self.config.min_atr_to_stop_ratio:
+                if distance > 0 and atr > 0:
+                    ratio = distance / atr  # stop-to-ATR
+                    if ratio > self.config.max_stop_to_atr_ratio:
                         self.skipped_by_atr += 1
-                        return False, "atr_too_small"
+                        return False, "stop_too_wide"
             except Exception as exc:
                 logger.debug("ATR gate failed: %s", exc)
 

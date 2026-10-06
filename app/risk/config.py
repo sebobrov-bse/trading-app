@@ -52,8 +52,11 @@ class RiskConfig(BaseModel):
     max_positions: int = Field(3, ge=1, le=100)
 
     # ---- ATR gate ----
+    # Reject trades where the stop is wider than max_stop_to_atr_ratio * ATR.
+    # Protects against stops that are too far (risk per trade would shrink
+    # the position size to nothing).
     check_atr: bool = True
-    min_atr_to_stop_ratio: float = Field(5.0, ge=0.0, le=50.0)
+    max_stop_to_atr_ratio: float = Field(5.0, ge=0.1, le=100.0)
 
     # ---- direction / session ----
     long_only: bool = False
