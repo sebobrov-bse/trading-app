@@ -18,6 +18,7 @@ class CandleRepository:
         timeframe: int,
         start: datetime | None = None,
         end: datetime | None = None,
+        asset_type: str | None = None,
     ) -> pd.DataFrame:
         """Return candles as a DataFrame indexed by timestamp.
 
@@ -30,6 +31,8 @@ class CandleRepository:
                 Candle.symbol == symbol,
                 Candle.timeframe == timeframe,
             )
+            if asset_type is not None:
+                stmt = stmt.where(Candle.asset_type == asset_type)
             if start is not None:
                 stmt = stmt.where(Candle.timestamp >= start)
             if end is not None:
