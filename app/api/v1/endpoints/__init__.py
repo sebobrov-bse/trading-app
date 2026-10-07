@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     data,
     db_check,
     health,
+    strategies,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "data",
     "db_check",
     "health",
+    "strategies",
 ]
