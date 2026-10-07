@@ -30,6 +30,8 @@ from app.services.candle_repository import CandleRepository
 from app.strategies.sma_crossover import SmaCrossover
 from app.strategies.loader import load_builtin, load_custom
 
+from app.risk.config import RiskConfig
+
 logger = logging.getLogger(__name__)
 
 STRATEGY_REGISTRY: dict[str, type[bt.Strategy]] = {
@@ -251,8 +253,17 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
 
     # Pass risk config to the strategy (or None → default RiskConfig).
     strategy_kwargs = dict(params)
+
+    # Risk config resolution:
+    # 1. request.risk_config — explicit override from client.
+    # 2. strategy_class.default_risk_config — per-strategy default.
+    # 3. RiskConfig() — global fallback.
     if request.risk_config is not None:
         strategy_kwargs["risk_config"] = request.risk_config
+    else:
+        default_risk = getattr(strategy_class, "default_risk_config", None)
+        if default_risk:
+            strategy_kwargs["risk_config"] = RiskConfig.model_validate(default_risk)
 
     cerebro.addstrategy(strategy_class, **strategy_kwargs)
     cerebro.broker.setcash(request.cash)
