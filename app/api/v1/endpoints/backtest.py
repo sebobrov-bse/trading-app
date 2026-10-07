@@ -52,13 +52,12 @@ router = APIRouter(prefix="/backtest", tags=["backtest"])
 @router.post("/run", response_model=BacktestResult)
 async def run_backtest_endpoint(request: BacktestRequest) -> BacktestResult:
     """Run a backtest and persist the result to DB."""
-    if request.strategy not in STRATEGY_REGISTRY:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unknown strategy '{request.strategy}'. Available: {sorted(STRATEGY_REGISTRY)}"
-            ),
-        )
+    from app.services.backtest_service import get_strategy_class
+
+    try:
+        get_strategy_class(request.strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     try:
         return await run_in_threadpool(run_backtest, request)

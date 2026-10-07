@@ -1,0 +1,30 @@
+name: "ADX Trend"
+description: "EMA crossover, confirmed by ADX > 25"
+version: 1
+entry:
+  logic: AND
+  conditions:
+    - left: { indicator: ADX, params: { period: 14 } }
+      operator: ">"
+      right: { constant: 25 }
+    - left: { indicator: EMA, params: { period: 10 } }
+      operator: cross_above
+      right: { indicator: EMA, params: { period: 30 } }
+exit:
+  logic: OR
+  conditions:
+    - left: { indicator: EMA, params: { period: 10 } }
+      operator: cross_below
+      right: { indicator: EMA, params: { period: 30 } }
+filters: []
+risk:
+  use_risk_management: true
+  stop_type: atr
+  atr_period: 14
+  atr_multiplier: 2.0
+  take_profit_rr: 3.0
+  risk_per_trade_pct: 0.5
+direction:
+  long: true
+  short: false
+intraday_only: false

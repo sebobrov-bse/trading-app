@@ -1,0 +1,30 @@
+name: "RSI Mean Reversion"
+description: "Buy oversold RSI above long SMA, exit on overbought"
+version: 1
+entry:
+  logic: AND
+  conditions:
+    - left: { indicator: RSI, params: { period: 14 } }
+      operator: "<"
+      right: { constant: 30 }
+    - left: { price: close }
+      operator: ">"
+      right: { indicator: SMA, params: { period: 100 } }
+exit:
+  logic: OR
+  conditions:
+    - left: { indicator: RSI, params: { period: 14 } }
+      operator: ">"
+      right: { constant: 65 }
+filters: []
+risk:
+  use_risk_management: true
+  stop_type: atr
+  atr_period: 14
+  atr_multiplier: 1.5
+  take_profit_rr: 2.0
+  risk_per_trade_pct: 0.5
+direction:
+  long: true
+  short: false
+intraday_only: false

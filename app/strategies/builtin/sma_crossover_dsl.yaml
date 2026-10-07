@@ -1,0 +1,27 @@
+name: "SMA Crossover DSL"
+description: "Same SMA 10/30 crossover as the Python class, but in DSL"
+version: 1
+entry:
+  logic: AND
+  conditions:
+    - left: { indicator: SMA, params: { period: 10 } }
+      operator: cross_above
+      right: { indicator: SMA, params: { period: 30 } }
+exit:
+  logic: OR
+  conditions:
+    - left: { indicator: SMA, params: { period: 10 } }
+      operator: cross_below
+      right: { indicator: SMA, params: { period: 30 } }
+filters: []
+risk:
+  use_risk_management: true
+  stop_type: atr
+  atr_period: 14
+  atr_multiplier: 1.5
+  take_profit_rr: 3.0
+  risk_per_trade_pct: 0.5
+direction:
+  long: true
+  short: false
+intraday_only: false

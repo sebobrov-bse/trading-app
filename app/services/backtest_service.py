@@ -28,12 +28,42 @@ from app.schemas.backtest import (
 )
 from app.services.candle_repository import CandleRepository
 from app.strategies.sma_crossover import SmaCrossover
+from app.strategies.loader import load_builtin, load_custom
 
 logger = logging.getLogger(__name__)
 
 STRATEGY_REGISTRY: dict[str, type[bt.Strategy]] = {
     "sma_crossover": SmaCrossover,
 }
+
+
+def get_strategy_class(name: str) -> type[bt.Strategy]:
+    """Resolve a strategy name to a compiled Backtrader class.
+
+    Resolution order:
+    1. Static Python classes (STRATEGY_REGISTRY).
+    2. `custom_<id>` — load from DB and compile.
+    3. Builtin YAML configs (loaded once, cached).
+
+    Raises ValueError if nothing matches.
+    """
+    if name in STRATEGY_REGISTRY:
+        return STRATEGY_REGISTRY[name]
+
+    if name.startswith("custom_"):
+        try:
+            sid = int(name.split("_", 1)[1])
+        except (ValueError, IndexError):
+            raise ValueError(f"Invalid custom strategy name: {name!r}")
+        return load_custom(sid)
+
+    builtin = load_builtin()
+    if name in builtin:
+        return builtin[name]
+
+    available = sorted(set(STRATEGY_REGISTRY) | set(builtin) | {"custom_<id>"})
+    raise ValueError(f"Unknown strategy '{name}'. Available: {available}")
+
 
 TRADING_DAYS_PER_YEAR = 252
 
@@ -201,8 +231,7 @@ def _persist_result(request: BacktestRequest, result: BacktestResult) -> int:
 
 def run_backtest(request: BacktestRequest) -> BacktestResult:
     """Load candles, run the strategy, persist, return extended metrics."""
-    if request.strategy not in STRATEGY_REGISTRY:
-        raise ValueError(f"Unknown strategy: {request.strategy}")
+    strategy_class = get_strategy_class(request.strategy)
 
     params = _validate_params(request.strategy, request.params)
 
@@ -225,7 +254,7 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     if request.risk_config is not None:
         strategy_kwargs["risk_config"] = request.risk_config
 
-    cerebro.addstrategy(STRATEGY_REGISTRY[request.strategy], **strategy_kwargs)
+    cerebro.addstrategy(strategy_class, **strategy_kwargs)
     cerebro.broker.setcash(request.cash)
     cerebro.broker.setcommission(commission=request.commission)
     cerebro.addsizer(bt.sizers.PercentSizer, percents=95)
