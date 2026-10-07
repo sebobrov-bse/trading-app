@@ -31,6 +31,14 @@ from app.schemas.custom_strategy import (
     CustomStrategyUpdate,
 )
 
+from app.schemas.strategy import (
+    DirectionSpec,
+    RiskConfigPreview,
+    StrategyListResponse,
+    StrategyMetadata,
+    StrategyParamSpec,
+)
+
 __all__ = [
     "BacktestDetails",
     "BacktestHistoryItem",
@@ -60,4 +68,9 @@ __all__ = [
     "CustomStrategyListResponse",
     "CustomStrategyRead",
     "CustomStrategyUpdate",
+    "DirectionSpec",
+    "RiskConfigPreview",
+    "StrategyListResponse",
+    "StrategyMetadata",
+    "StrategyParamSpec",
 ]
