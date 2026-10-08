@@ -33,6 +33,7 @@ export interface BacktestRequest {
   params: Record<string, unknown>;
   cash?: number;
   commission?: number;
+  risk_config?: RiskConfigPreview | null;
 }
 
 export interface TradeInfo {
@@ -77,6 +78,7 @@ export interface BacktestResult {
   exposure: number;
   equity_curve: EquityPoint[];
   trades_list: TradeInfo[];
+  applied_risk_config?: RiskConfigPreview | null;
 }
 
 export interface BacktestHistoryItem {
@@ -206,4 +208,64 @@ export interface CommonPeriod {
 export interface CompareResponse {
   backtests: BacktestForCompare[];
   common_period: CommonPeriod;
+}
+
+// ---- Strategy metadata (B.1 / B.2) ----
+
+export interface StrategyParamSpec {
+  name: string;
+  type: 'int' | 'float' | 'bool' | 'str';
+  default: number | boolean | string;
+  min?: number | null;
+  max?: number | null;
+  description: string;
+}
+
+export interface RiskConfigPreview {
+  use_risk_management: boolean;
+  stop_type: 'atr' | 'percent' | 'n_bars';
+  atr_multiplier: number;
+  take_profit_rr: number;
+  risk_per_trade_pct: number;
+
+  // Optional advanced fields (present when overridden)
+  atr_period?: number;
+  stop_percent?: number;
+  stop_n_bars?: number;
+  max_positions?: number;
+  max_daily_loss_pct?: number;
+  max_weekly_loss_pct?: number;
+  max_monthly_loss_pct?: number;
+  move_to_breakeven_after_rr?: number;
+  trailing_after_rr?: number;
+  trailing_atr_multiplier?: number;
+  check_atr?: boolean;
+  min_atr_to_stop_ratio?: number;
+  long_only?: boolean;
+  short_only?: boolean;
+  intraday_only?: boolean;
+}
+
+export interface DirectionSpec {
+  long: boolean;
+  short: boolean;
+}
+
+export interface StrategyMetadata {
+  name: string;
+  display_name: string;
+  description: string;
+  source: 'python' | 'builtin' | 'custom';
+  is_custom: boolean;
+  custom_id: number | null;
+  params: StrategyParamSpec[];
+  default_risk_config: RiskConfigPreview;
+  direction: DirectionSpec;
+  tags: string[];
+  intraday_only: boolean;
+}
+
+export interface StrategyListResponse {
+  items: StrategyMetadata[];
+  total: number;
 }
