@@ -1054,3 +1054,42 @@ body {
   width: 16px;
   height: 16px;
 }
+/* Risk section */
+.risk-section {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.risk-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.risk-section-header h3 {
+  margin: 0;
+}
+
+.advanced-risk {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.advanced-risk summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #374151;
+  user-select: none;
+}
+
+.advanced-risk[open] summary {
+  margin-bottom: 12px;
+}
