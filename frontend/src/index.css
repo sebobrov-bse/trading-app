@@ -1093,3 +1093,41 @@ body {
 .advanced-risk[open] summary {
   margin-bottom: 12px;
 }
+/* Applied risk config card */
+.applied-risk-card {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.applied-risk-disabled {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.applied-risk-card h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #0c4a6e;
+}
+
+.applied-risk-disabled h4 {
+  color: #991b1b;
+}
+
+.applied-risk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.applied-risk-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #e0f2fe;
+}
+
+.applied-risk-table td:last-child {
+  text-align: right;
+}
