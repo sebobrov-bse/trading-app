@@ -18,8 +18,10 @@ def calculate_size(
 ) -> int:
     """Return position size in contracts/shares.
 
-    For futures, pass contract_multiplier (e.g. 100 for SBRF) to convert
-    the number of base units into the number of contracts.
+    Applies:
+    - risk-based sizing (risk_amount / risk_per_unit);
+    - min stop distance (entry * min_stop_distance_pct);
+    - max position value (capital * max_position_value_pct / 100).
     """
     if entry_price <= 0:
         return 0
@@ -28,16 +30,23 @@ def calculate_size(
     if risk_amount <= 0:
         return 0
 
-    risk_per_unit = abs(entry_price - stop_price)
-    if risk_per_unit <= 0:
+    # Enforce min stop distance.
+    min_distance = entry_price * config.min_stop_distance_pct
+    stop_distance = abs(entry_price - stop_price)
+    effective_distance = max(stop_distance, min_distance)
+    if effective_distance <= 0:
         return 0
 
-    raw_size = risk_amount / risk_per_unit
+    raw_size = risk_amount / effective_distance
 
-    # For futures, divide by multiplier. Example: raw_size=137 base units,
-    # multiplier=100 → 1 contract.
+    # For futures, convert to contracts.
     if contract_multiplier is not None and contract_multiplier > 0:
-        multiplier_f = float(contract_multiplier)
-        raw_size = raw_size / multiplier_f
+        raw_size = raw_size / float(contract_multiplier)
 
-    return int(raw_size)
+    # Cap by max position value.
+    max_value = capital * config.max_position_value_pct / 100.0
+    max_size_by_value = max_value / entry_price
+    if contract_multiplier is not None and contract_multiplier > 0:
+        max_size_by_value = max_size_by_value / float(contract_multiplier)
+
+    return int(min(raw_size, max_size_by_value))

@@ -151,7 +151,11 @@ class RiskManager:
     #  Gatekeeper
     # ------------------------------------------------------------------
 
-    def can_open_position(self, direction: Direction) -> tuple[bool, str]:
+    def can_open_position(
+        self,
+        direction: Direction,
+        custom_stop: float | None = None,
+    ) -> tuple[bool, str]:
         """Return (allowed, reason). `reason` is 'ok' or a short code."""
         if not self.config.use_risk_management:
             return True, "risk_disabled"
@@ -220,8 +224,11 @@ class RiskManager:
         # Position sizing must be > 0.
         entry_price = float(self.strategy.data.close[0])
         try:
-            stop_price = self.calculate_stop_price(entry_price, direction)
-            size = self.calculate_position_size(entry_price, stop_price)
+            if custom_stop is not None:
+                size = self.calculate_position_size(entry_price, custom_stop)
+            else:
+                stop_price = self.calculate_stop_price(entry_price, direction)
+                size = self.calculate_position_size(entry_price, stop_price)
             if size <= 0:
                 self.skipped_by_size_zero += 1
                 return False, "size_zero"

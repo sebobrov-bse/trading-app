@@ -51,6 +51,14 @@ class RiskConfig(BaseModel):
     # ---- position count ----
     max_positions: int = Field(3, ge=1, le=100)
 
+    # ---- position value limits ----
+    # Минимальная дистанция стопа в долях от entry_price (0.002 = 0.2%).
+    # Защита от "микро-стопов", которые взрывают размер позиции.
+    min_stop_distance_pct: float = Field(0.002, ge=0.0, le=0.05)
+    # Максимальная стоимость позиции в % от капитала.
+    # 95% — мягкое ограничение, чтобы не уйти в плечо.
+    max_position_value_pct: float = Field(95.0, gt=0.0, le=100.0)
+
     # ---- ATR gate ----
     # Reject trades where the stop is wider than max_stop_to_atr_ratio * ATR.
     # Protects against stops that are too far (risk per trade would shrink

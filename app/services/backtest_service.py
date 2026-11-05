@@ -264,7 +264,20 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
         default_risk = getattr(strategy_class, "default_risk_config", None)
         if default_risk:
             strategy_kwargs["risk_config"] = RiskConfig.model_validate(default_risk)
+    # Levin system: precompute daily levels from 1m data.
+    if request.strategy == "levin":
+        from app.services.level_calculator import precompute_levels
 
+        with SessionLocal() as db:
+            levels = precompute_levels(
+                session=db,
+                symbol=request.symbol,
+                timeframe=1,
+                start=request.start,
+                end=request.end,
+            )
+        strategy_kwargs["levels_cache"] = levels
+        logger.info("LevinSystem: %s days of levels precomputed", len(levels))
     cerebro.addstrategy(strategy_class, **strategy_kwargs)
     cerebro.broker.setcash(request.cash)
     cerebro.broker.setcommission(commission=request.commission)

@@ -62,7 +62,13 @@ class BaseStrategy(bt.Strategy):
         # ---- risk management ----
         cfg = self.p.risk_config
         if cfg is None:
-            cfg = RiskConfig()
+            # Fallback to the class's default_risk_config if present,
+            # else global RiskConfig() defaults.
+            default_dict = getattr(type(self), "default_risk_config", None)
+            if default_dict:
+                cfg = RiskConfig.model_validate(default_dict)
+            else:
+                cfg = RiskConfig()
         self.risk_config: RiskConfig = cfg
         self.risk: RiskManager | None = RiskManager(self, cfg) if cfg.use_risk_management else None
 
@@ -101,6 +107,8 @@ class BaseStrategy(bt.Strategy):
         self,
         direction: Direction = "long",
         size: int | None = None,
+        custom_stop: float | None = None,
+        custom_tp: float | None = None,
     ) -> None:
         """Open a position with risk-based sizing, stop, and take-profit.
 
@@ -119,21 +127,30 @@ class BaseStrategy(bt.Strategy):
                 self.order = self.sell()
             return
 
-        # Risk gate.
-        allowed, reason = self.risk.can_open_position(direction)
+        # Risk gate (with optional custom stop for position sizing).
+        allowed, reason = self.risk.can_open_position(direction, custom_stop=custom_stop)
         if not allowed:
             self.log(f"SKIP {direction}: {reason}")
             return
 
-        # Size.
-        stop_price = self.risk.calculate_stop_price(entry_price, direction)
+        # Stop and TP: custom if provided, else RiskManager defaults.
+        if custom_stop is not None:
+            stop_price = custom_stop
+            tp_price = (
+                custom_tp
+                if custom_tp is not None
+                else self.risk.calculate_take_profit_price(entry_price, stop_price, direction)
+            )
+        else:
+            stop_price = self.risk.calculate_stop_price(entry_price, direction)
+            tp_price = self.risk.calculate_take_profit_price(entry_price, stop_price, direction)
+
+        # Size (still uses RiskManager's calculator, but with our stop).
         if size is None:
             size = self.risk.calculate_position_size(entry_price, stop_price)
         if size <= 0:
             self.log(f"SKIP {direction}: size=0")
             return
-
-        tp_price = self.risk.calculate_take_profit_price(entry_price, stop_price, direction)
 
         # Entry.
         if direction == "long":
@@ -265,10 +282,18 @@ class BaseStrategy(bt.Strategy):
         else:
             rr = (self._entry_price - current) / risk
 
-        if rr >= self.risk_config.move_to_breakeven_after_rr and not self._breakeven_done:
+        if (
+            self.risk_config.move_to_breakeven_after_rr > 0
+            and rr >= self.risk_config.move_to_breakeven_after_rr
+            and not self._breakeven_done
+        ):
             self.move_stop_to_breakeven()
 
-        if rr >= self.risk_config.trailing_after_rr and not self._trailing_on:
+        if (
+            self.risk_config.trailing_after_rr > 0
+            and rr >= self.risk_config.trailing_after_rr
+            and not self._trailing_on
+        ):
             self._trailing_on = True
             self.log(f"TRAILING enabled at RR={rr:.2f}")
 
