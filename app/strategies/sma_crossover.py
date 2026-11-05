@@ -12,6 +12,41 @@ class SmaCrossover(BaseStrategy):
     SELL (close) when fast SMA crosses below slow SMA.
     """
 
+    name = "sma_crossover"
+    display_name = "SMA Crossover"
+    description = "Классический кроссовер быстрой и медленной SMA"
+    params_meta = [
+        {
+            "name": "fast",
+            "type": "int",
+            "default": 10,
+            "min": 2,
+            "max": 200,
+            "description": "Период быстрой SMA",
+        },
+        {
+            "name": "slow",
+            "type": "int",
+            "default": 30,
+            "min": 3,
+            "max": 500,
+            "description": "Период медленной SMA",
+        },
+    ]
+    default_risk_config = {
+        "use_risk_management": True,
+        "stop_type": "atr",
+        "atr_period": 14,
+        "atr_multiplier": 1.5,
+        "take_profit_rr": 3.0,
+        "risk_per_trade_pct": 0.5,
+        "move_to_breakeven_after_rr": 1.0,
+        "trailing_after_rr": 3.0,
+    }
+    direction = {"long": True, "short": False}
+    tags = ["trend", "crossover"]
+    intraday_only = False
+
     params = (
         ("fast", 10),
         ("slow", 30),

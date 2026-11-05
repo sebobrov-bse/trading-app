@@ -9,6 +9,8 @@ import backtrader as bt
 from app.risk.config import RiskConfig
 from app.risk.manager import RiskManager
 
+from typing import ClassVar, Literal
+
 logger = logging.getLogger(__name__)
 
 Direction = Literal["long", "short"]
@@ -27,6 +29,23 @@ class BaseStrategy(bt.Strategy):
 
     Subclasses must define `params` and, optionally, override `next()`.
     """
+
+    # ---- Metadata (overridable by subclasses) ----
+    name: ClassVar[str] = "unnamed"
+    display_name: ClassVar[str] = "Unnamed Strategy"
+    description: ClassVar[str] = ""
+    params_meta: ClassVar[list[dict]] = []
+    default_risk_config: ClassVar[dict] = {
+        "use_risk_management": True,
+        "stop_type": "atr",
+        "atr_period": 14,
+        "atr_multiplier": 1.5,
+        "take_profit_rr": 3.0,
+        "risk_per_trade_pct": 0.5,
+    }
+    direction: ClassVar[dict] = {"long": True, "short": False}
+    tags: ClassVar[list[str]] = []
+    intraday_only: ClassVar[bool] = False
 
     params = (
         ("risk_config", None),  # RiskConfig instance or None

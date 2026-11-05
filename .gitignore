@@ -56,3 +56,7 @@ Desktop.ini
 
 # ---------- Jupyter ----------
 .ipynb_checkpoints/
+
+# Local notes / docs
+*.txt
+!requirements.txt
