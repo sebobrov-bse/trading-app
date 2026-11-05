@@ -28,6 +28,7 @@ from app.schemas.backtest import (
 )
 from app.services.candle_repository import CandleRepository
 from app.strategies.sma_crossover import SmaCrossover
+from app.strategies.levin.strategy import LevinSystem
 from app.strategies.loader import load_builtin, load_custom
 
 from app.risk.config import RiskConfig
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 STRATEGY_REGISTRY: dict[str, type[bt.Strategy]] = {
     "sma_crossover": SmaCrossover,
+    "levin": LevinSystem,
 }
 
 
