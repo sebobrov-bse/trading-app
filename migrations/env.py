@@ -16,6 +16,7 @@ from app.models import (  # noqa: F401
     CustomStrategy,  # ← новая
     InstrumentSpec,
     SystemStatus,
+    GerchikLevel,
 )
 
 # this is the Alembic Config object, which provides

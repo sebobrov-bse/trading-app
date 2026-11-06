@@ -6,6 +6,7 @@ from app.models.instrument_spec import InstrumentSpec
 from app.models.system_status import SystemStatus
 
 from app.models.custom_strategy import CustomStrategy
+from app.models.gerchik_level import GerchikLevel
 
 __all__ = [
     "Backtest",
@@ -15,4 +16,5 @@ __all__ = [
     "CustomStrategy",
     "InstrumentSpec",
     "SystemStatus",
+    "GerchikLevel",
 ]
