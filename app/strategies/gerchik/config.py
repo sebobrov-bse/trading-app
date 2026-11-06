@@ -69,7 +69,7 @@ class GerchikConfig(BaseModel):
     # ---- Energy ----
     energy_window_min: int = Field(default=3, ge=2, le=10)
     energy_window_max: int = Field(default=10, ge=3, le=30)
-    energy_small_k: float = Field(default=0.5, gt=0, lt=1)
+    energy_small_k: float = Field(default=0.6, gt=0, lt=1)
     energy_big_k: float = Field(default=2.0, gt=1, lt=10)
     energy_accumulation_pct: float = Field(default=0.6, gt=0, lt=1)
     energy_distribution_pct: float = Field(default=0.4, gt=0, lt=1)
@@ -81,3 +81,9 @@ class GerchikConfig(BaseModel):
 
     # ---- Lookback ----
     key_points_lookback_days: int = Field(default=365, ge=30, le=2000)
+    history_lookback_bars: int = Field(
+        default=120,
+        ge=20,
+        le=1000,
+        description="Max bars of history for level/key_point detection",
+    )
