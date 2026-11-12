@@ -30,6 +30,10 @@ from app.services.candle_repository import CandleRepository
 from app.strategies.sma_crossover import SmaCrossover
 from app.strategies.levin.strategy import LevinSystem
 from app.strategies.loader import load_builtin, load_custom
+from app.strategies.sma_crossover import SmaCrossover
+from app.strategies.levin.strategy import LevinSystem
+from app.strategies.gerchik.strategy import GerchikSystem
+from app.strategies.loader import load_builtin, load_custom
 
 from app.risk.config import RiskConfig
 
@@ -38,6 +42,7 @@ logger = logging.getLogger(__name__)
 STRATEGY_REGISTRY: dict[str, type[bt.Strategy]] = {
     "sma_crossover": SmaCrossover,
     "levin": LevinSystem,
+    "gerchik": GerchikSystem,
 }
 
 
@@ -86,6 +91,33 @@ def _validate_params(strategy_name: str, params: dict[str, Any]) -> dict[str, An
         if fast >= slow:
             raise ValueError("fast must be less than slow")
         return {"fast": fast, "slow": slow}
+
+    if strategy_name == "gerchik":
+        pattern = str(params.get("pattern", "bounce"))
+        if pattern not in ("bounce", "breakout", "limit_player"):
+            raise ValueError("pattern must be one of: bounce, breakout, limit_player")
+        direction_mode = str(params.get("direction_mode", "both"))
+        if direction_mode not in ("long", "short", "both"):
+            raise ValueError("direction_mode must be one of: long, short, both")
+        try:
+            max_hold_days = int(params.get("max_hold_days", 3))
+            min_path_ratio = float(params.get("min_path_ratio", 0.5))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("max_hold_days (int) and min_path_ratio (float) are required") from exc
+        if max_hold_days < 1 or max_hold_days > 30:
+            raise ValueError("max_hold_days must be in [1, 30]")
+        if min_path_ratio <= 0 or min_path_ratio > 5:
+            raise ValueError("min_path_ratio must be in (0, 5]")
+        allowed_energy = params.get("allowed_energy", ["distribution", "neutral"])
+        if not isinstance(allowed_energy, (list, tuple)) or not allowed_energy:
+            raise ValueError("allowed_energy must be a non-empty list")
+        return {
+            "pattern": pattern,
+            "direction_mode": direction_mode,
+            "max_hold_days": max_hold_days,
+            "min_path_ratio": min_path_ratio,
+            "allowed_energy": tuple(allowed_energy),
+        }
 
     return dict(params)
 
@@ -280,6 +312,27 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
             )
         strategy_kwargs["levels_cache"] = levels
         logger.info("LevinSystem: %s days of levels precomputed", len(levels))
+
+    # Gerchik system: precompute days from D1 + M1 on-the-fly.
+    if request.strategy == "gerchik":
+        from datetime import timedelta
+
+        from app.strategies.gerchik.precompute import precompute_gerchik
+
+        # Warmup: ATR needs at least atr_period+1 bars of history,
+        # so push start back 30 calendar days.
+        load_start = request.start - timedelta(days=30)
+        with SessionLocal() as db:
+            days = precompute_gerchik(
+                session=db,
+                symbol=request.symbol,
+                start=load_start,
+                end=request.end,
+            )
+        strategy_kwargs["levels_cache"] = {d.date: d for d in days}
+        strategy_kwargs["symbol"] = request.symbol
+        logger.info("GerchikSystem: %s days precomputed", len(days))
+
     cerebro.addstrategy(strategy_class, **strategy_kwargs)
     cerebro.broker.setcash(request.cash)
     cerebro.broker.setcommission(commission=request.commission)
