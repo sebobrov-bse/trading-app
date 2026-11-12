@@ -82,11 +82,22 @@ class GerchikConfig(BaseModel):
     # ---- M1 timing (S.2b) ----
     m1_atr_period: int = Field(default=14, ge=5, le=60)
     m1_max_wait_bars: int = Field(default=30, ge=5, le=120)
+
+    # Bounce
     m1_bounce_min_atr: float = Field(default=0.5, gt=0, lt=5)
     m1_bounce_stop_atr: float = Field(default=1.0, gt=0, lt=5)
     m1_bounce_max_deviation_atr: float = Field(default=0.5, gt=0, lt=5)
+
+    # Breakout
     m1_breakout_confirm_bars: int = Field(default=3, ge=1, le=10)
+    m1_breakout_min_atr: float = Field(default=0.3, gt=0, lt=5)
+    m1_breakout_stop_atr: float = Field(default=1.0, gt=0, lt=5)
+    m1_breakout_max_deviation_atr: float = Field(default=0.5, gt=0, lt=5)
+
+    # Limit player (false breakout)
+    m1_lp_break_atr: float = Field(default=0.3, gt=0, lt=5)
     m1_limit_player_return_atr: float = Field(default=0.3, gt=0, lt=5)
+    m1_lp_stop_atr: float = Field(default=1.0, gt=0, lt=5)
 
     # ---- Lookback ----
     key_points_lookback_days: int = Field(default=365, ge=30, le=2000)
