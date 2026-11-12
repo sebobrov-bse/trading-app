@@ -83,6 +83,8 @@ class GerchikConfig(BaseModel):
     m1_atr_period: int = Field(default=14, ge=5, le=60)
     m1_max_wait_bars: int = Field(default=30, ge=5, le=120)
     m1_bounce_min_atr: float = Field(default=0.5, gt=0, lt=5)
+    m1_bounce_stop_atr: float = Field(default=1.0, gt=0, lt=5)
+    m1_bounce_max_deviation_atr: float = Field(default=0.5, gt=0, lt=5)
     m1_breakout_confirm_bars: int = Field(default=3, ge=1, le=10)
     m1_limit_player_return_atr: float = Field(default=0.3, gt=0, lt=5)
 
