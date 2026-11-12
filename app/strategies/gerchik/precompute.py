@@ -106,7 +106,10 @@ def precompute_gerchik(
         config = GerchikConfig()
 
     load_start = start - timedelta(days=config.atr_period + 10)
-    df = _load_d1(session, symbol, load_start, end)
+    # candle_repository.get_dataframe excludes `end` from its WHERE,
+    # so push end by +1 day to make the requested last day inclusive.
+    load_end = end + timedelta(days=1)
+    df = _load_d1(session, symbol, load_start, load_end)
     if df is None or df.empty:
         logger.warning("No D1 for %s in %s..%s", symbol, load_start, end)
         return []

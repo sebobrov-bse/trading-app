@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     health,
     strategies,
 )
+from app.api.v1.endpoints import gerchik as gerchik_endpoints
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -19,3 +20,4 @@ api_v1_router.include_router(backtest.router)
 api_v1_router.include_router(data.router)
 api_v1_router.include_router(custom_strategies.router)
 api_v1_router.include_router(strategies.router)
+api_v1_router.include_router(gerchik_endpoints.router, tags=["gerchik"])
