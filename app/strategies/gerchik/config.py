@@ -99,6 +99,11 @@ class GerchikConfig(BaseModel):
     m1_limit_player_return_atr: float = Field(default=0.3, gt=0, lt=5)
     m1_lp_stop_atr: float = Field(default=1.0, gt=0, lt=5)
 
+    # ---- GerchikSystem (S.2b.5) ----
+    system_max_hold_days: int = Field(default=3, ge=1, le=30)
+    system_min_path_ratio: float = Field(default=0.5, gt=0, lt=5)
+    system_neutral_path_min: float = Field(default=0.7, gt=0, lt=5)
+
     # ---- Lookback ----
     key_points_lookback_days: int = Field(default=365, ge=30, le=2000)
     history_lookback_bars: int = Field(
