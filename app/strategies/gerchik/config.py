@@ -81,6 +81,39 @@ class GerchikConfig(BaseModel):
 
     # ---- Lookback ----
     key_points_lookback_days: int = Field(default=365, ge=30, le=2000)
+
+    # ---- Rejection pattern (S.2b: БСУ/БПУ1/БПУ2) ----
+    # Допуск касания БПУ1: max(ticks*tick_size, pct*level). Защищает
+    # от scale-зависимости: на SBER 1 тик=0.01₽, на GAZP — тоже.
+    tolerance_bpu1_ticks: int = Field(default=2, ge=0, le=20)
+    tolerance_bpu1_pct: float = Field(default=0.0002, gt=0, lt=0.01)
+    tick_size: float = Field(default=0.01, gt=0)
+
+    # «Та же плоскость» БПУ2: high(BPU2) <= high(BPU1) * (1 + tol).
+    bpu2_plane_tolerance: float = Field(default=0.001, gt=0, lt=0.05)
+
+    # ---- Stop / luff / R:R ----
+    stop_loss_pct: float = Field(default=0.002, gt=0, lt=0.05)
+    luff_ratio: float = Field(default=0.20, gt=0, lt=1.0)
+    min_rr: float = Field(default=3.0, ge=1.0, le=10.0)
+    room_to_move_multiplier: float = Field(default=4.0, ge=1.0, le=10.0)
+
+    # ---- M1 timing (rejection) ----
+    m1_timing_mode: str = Field(default="strict")
+
+    # ---- Session / time filters ----
+    session_end_main: str = Field(default="18:45")
+    session_end_evening: str = Field(default="23:50")
+    use_evening_session: bool = Field(default=False)
+    position_timeout_hours: float = Field(default=0.0, ge=0.0, le=72.0)
+    entry_time_filter_start: str = Field(default="12:00")
+    entry_time_filter_end: str = Field(default="13:30")
+    use_entry_time_filter: bool = Field(default=False)
+
+    # ---- Commission (rejection) ----
+    commission_rate: float = Field(default=0.0002, gt=0, lt=0.01)
+    include_commission_in_tp: bool = Field(default=True)
+
     history_lookback_bars: int = Field(
         default=120,
         ge=20,
