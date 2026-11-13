@@ -114,6 +114,12 @@ class GerchikConfig(BaseModel):
     commission_rate: float = Field(default=0.0002, gt=0, lt=0.01)
     include_commission_in_tp: bool = Field(default=True)
 
+    # ---- Rejection strategy: NEUTRAL fallback ----
+    # If trend == NEUTRAL, allow trading in the direction of path_ratio
+    # only when |path_ratio| >= this threshold. Without fallback, 13/19
+    # days in June 2024 are NEUTRAL -> 0 patterns.
+    system_neutral_path_min: float = Field(default=0.7, gt=0, lt=5)
+
     history_lookback_bars: int = Field(
         default=120,
         ge=20,
