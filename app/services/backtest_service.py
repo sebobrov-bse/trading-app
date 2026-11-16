@@ -30,6 +30,7 @@ from app.services.candle_repository import CandleRepository
 from app.strategies.sma_crossover import SmaCrossover
 from app.strategies.levin.strategy import LevinSystem
 from app.strategies.gerchik.rejection_strategy import GerchikRejection
+from app.strategies.gerchik.breakout_strategy import GerchikBreakout
 from app.strategies.loader import load_builtin, load_custom
 
 
@@ -41,6 +42,7 @@ STRATEGY_REGISTRY: dict[str, type[bt.Strategy]] = {
     "sma_crossover": SmaCrossover,
     "levin": LevinSystem,
     "gerchik_rejection": GerchikRejection,
+    "gerchik_breakout": GerchikBreakout,
 }
 
 
@@ -120,6 +122,37 @@ def _validate_params(strategy_name: str, params: dict[str, Any]) -> dict[str, An
                 out["system_config"] = GerchikConfig(**overrides)
             except Exception as exc:
                 raise ValueError(f"Invalid gerchik_rejection config override: {exc}") from exc
+        return out
+    if strategy_name == "gerchik_breakout":
+        from app.strategies.gerchik.config import GerchikConfig
+
+        out: dict = {}
+        if "allowed_energy" in params:
+            ae = params["allowed_energy"]
+            if isinstance(ae, (list, tuple)) and ae:
+                out["allowed_energy"] = tuple(ae)
+
+        config_keys = (
+            "atr_filter_threshold",
+            "system_neutral_path_min",
+            "min_rr",
+            "room_to_move_multiplier",
+            "stop_loss_pct",
+            "luff_ratio",
+            "breakout_m1_mode",
+            "breakout_max_wait_bars",
+            "breakout_cancel_distance",
+            "breakout_strong_move_atr",
+        )
+        overrides: dict = {}
+        for key in config_keys:
+            if key in params and params[key] is not None:
+                overrides[key] = params[key]
+        if overrides:
+            try:
+                out["system_config"] = GerchikConfig(**overrides)
+            except Exception as exc:
+                raise ValueError(f"Invalid gerchik_breakout config override: {exc}") from exc
         return out
 
     return dict(params)
@@ -293,7 +326,7 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     if system_config is not None:
         strategy_kwargs["system_config"] = system_config
 
-    if request.strategy == "gerchik_rejection":
+    if request.strategy in ("gerchik_rejection", "gerchik_breakout"):
         # GerchikRejection needs three feeds:
         #   datas[0] = M1 (primary, source for resampling)
         #   datas[1] = M5 (resampled from M1) — next() runs here
@@ -340,10 +373,11 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
             )
         strategy_kwargs["levels_cache"] = {d.date: d for d in days}
         strategy_kwargs["symbol"] = request.symbol
-        logger.info("GerchikRejection: %d days precomputed", len(days))
-
-        # `bars` metric below = number of M1 bars traded on.
-        # The single-feed `df` won't be defined in this branch otherwise.
+        logger.info(
+            "%s: %d days precomputed",
+            request.strategy,
+            len(days),
+        )
         df = df_m1
     else:
         # Single-feed (SMA / RSI / Levin / builtins): as before.
