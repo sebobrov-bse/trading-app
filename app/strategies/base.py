@@ -175,6 +175,12 @@ class BaseStrategy(bt.Strategy):
                 self.cancel(o)
         self._stop_order = None
         self._tp_order = None
+        # Critical: without resetting _stop_price/_tp_price, notify_order
+        # on the close() Completed event will re-issue bracket orders
+        # (see lines ~365: `if self._stop_price is not None ...`).
+        # The phantom TP would then stay alive -> huge unrealized pnl.
+        self._stop_price = None
+        self._tp_price = None
 
         if self.position:
             self.order = self.close()
