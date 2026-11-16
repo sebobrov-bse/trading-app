@@ -99,6 +99,21 @@ def _report_backtest(bt_id: int) -> None:
         if len(trades) > 20:
             print(f"  ... and {len(trades) - 20} more")
 
+        # Sanity: realized pnl from trades vs. reported pnl (final - start)
+        realized = sum(float(t.pnl_net) for t in trades)
+        reported = float(bt.pnl)
+        unrealized = reported - realized
+        print(f"\nPnL breakdown:")
+        print(f"  realized (closed trades): {realized:+.2f}")
+        print(f"  reported (bt.pnl):        {reported:+.2f}")
+        print(f"  unrealized:               {unrealized:+.2f}")
+        if abs(unrealized) > max(abs(realized) * 0.5, 100):
+            print(f"  ⚠  WARNING: unrealized != 0 — position open at end?")
+            print(f"     (this is a bug: intraday_only should close all)")
+
+        # Distribution by energy
+        by_energy: dict[str, list[float]] = {}
+
         # Distribution by energy
         by_energy: dict[str, list[float]] = {}
         by_score: dict[int, list[float]] = {}

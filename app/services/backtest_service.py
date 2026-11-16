@@ -91,9 +91,8 @@ def _validate_params(strategy_name: str, params: dict[str, Any]) -> dict[str, An
         return {"fast": fast, "slow": slow}
 
     if strategy_name == "gerchik_rejection":
-        # Whitelist only params that exist on GerchikRejection.params.
-        # `symbol`, `levels_cache`, `system_config` are injected by
-        # run_backtest, not by the client.
+        from app.strategies.gerchik.config import GerchikConfig
+
         out: dict = {}
         if "max_m5_lookback" in params:
             out["max_m5_lookback"] = int(params["max_m5_lookback"])
@@ -101,6 +100,26 @@ def _validate_params(strategy_name: str, params: dict[str, Any]) -> dict[str, An
             ae = params["allowed_energy"]
             if isinstance(ae, (list, tuple)) and ae:
                 out["allowed_energy"] = tuple(ae)
+
+        # Config overrides -> GerchikConfig(system_config=...)
+        config_keys = (
+            "atr_filter_threshold",
+            "m1_timing_mode",
+            "system_neutral_path_min",
+            "min_rr",
+            "room_to_move_multiplier",
+            "stop_loss_pct",
+            "luff_ratio",
+        )
+        overrides: dict = {}
+        for key in config_keys:
+            if key in params and params[key] is not None:
+                overrides[key] = params[key]
+        if overrides:
+            try:
+                out["system_config"] = GerchikConfig(**overrides)
+            except Exception as exc:
+                raise ValueError(f"Invalid gerchik_rejection config override: {exc}") from exc
         return out
 
     return dict(params)
@@ -263,9 +282,16 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
 
     params = _validate_params(request.strategy, request.params)
 
+    # system_config is a Pydantic object (GerchikConfig), not JSON-safe.
+    # Pop it out of `params` (which goes into Backtest.params), keep it
+    # only in strategy_kwargs.
+    system_config = params.pop("system_config", None)
+
     repo = CandleRepository()
     cerebro = bt.Cerebro(runonce=False)
     strategy_kwargs = dict(params)
+    if system_config is not None:
+        strategy_kwargs["system_config"] = system_config
 
     if request.strategy == "gerchik_rejection":
         # GerchikRejection needs three feeds:

@@ -83,6 +83,7 @@ class GerchikRejection(BaseStrategy):
         self._closing: bool = False
         self._entry_m5_dt: datetime | None = None
         self._last_m5_dt: datetime | None = None
+        self._cooldown_until: datetime | None = None
 
         # Diagnostics counters (read from outside after run).
         # NOTE: must NOT be named `stats` — Backtrader reserves
@@ -164,6 +165,11 @@ class GerchikRejection(BaseStrategy):
     def _try_enter(self, m5_dt: datetime) -> None:
         if self.current_date is None:
             return
+        # Cooldown: don't retry immediately after a pattern attempt.
+        if self._cooldown_until is not None:
+            if m5_dt < self._cooldown_until:
+                return
+            self._cooldown_until = None
         if not self.strong_levels:
             self.counters["skipped_by_energy"] += 1
             return
@@ -314,6 +320,7 @@ class GerchikRejection(BaseStrategy):
 
         if status == "FILLED":
             self.counters["filled"] += 1
+            self._closing = False  # reset session-end flag for the new trade
             self.safe_buy(
                 direction="long" if pat.direction == "LONG" else "short",
                 custom_stop=pat.stop_price,
@@ -331,12 +338,23 @@ class GerchikRejection(BaseStrategy):
         else:
             self.counters["not_filled"] += 1
             self.log(f"NOT_FILLED {pat.direction} level={pat.level:.2f} m1_bars={len(m1_bars)}")
+        # Cooldown: after a pattern attempt, wait 30 min before retrying.
+        self._cooldown_until = bpu2_dt + timedelta(minutes=30)
 
     def _manage_position(self, m5_dt: datetime) -> None:
         # Reset _closing when position is fully closed.
         if not self.position:
             self._closing = False
             return
+
+        # Sanity: if _closing is stuck True but position is fresh
+        # (entry today), reset it. This prevents overnight holds.
+        if (
+            self._closing
+            and self._entry_m5_dt is not None
+            and self._entry_m5_dt.date() == m5_dt.date()
+        ):
+            self._closing = False
         session_end = (
             self.cfg.session_end_evening
             if self.cfg.use_evening_session
