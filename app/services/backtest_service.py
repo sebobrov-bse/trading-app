@@ -29,10 +29,9 @@ from app.schemas.backtest import (
 from app.services.candle_repository import CandleRepository
 from app.strategies.sma_crossover import SmaCrossover
 from app.strategies.levin.strategy import LevinSystem
+from app.strategies.gerchik.rejection_strategy import GerchikRejection
 from app.strategies.loader import load_builtin, load_custom
-from app.strategies.sma_crossover import SmaCrossover
-from app.strategies.levin.strategy import LevinSystem
-from app.strategies.loader import load_builtin, load_custom
+
 
 from app.risk.config import RiskConfig
 
@@ -41,6 +40,7 @@ logger = logging.getLogger(__name__)
 STRATEGY_REGISTRY: dict[str, type[bt.Strategy]] = {
     "sma_crossover": SmaCrossover,
     "levin": LevinSystem,
+    "gerchik_rejection": GerchikRejection,
 }
 
 
@@ -89,6 +89,19 @@ def _validate_params(strategy_name: str, params: dict[str, Any]) -> dict[str, An
         if fast >= slow:
             raise ValueError("fast must be less than slow")
         return {"fast": fast, "slow": slow}
+
+    if strategy_name == "gerchik_rejection":
+        # Whitelist only params that exist on GerchikRejection.params.
+        # `symbol`, `levels_cache`, `system_config` are injected by
+        # run_backtest, not by the client.
+        out: dict = {}
+        if "max_m5_lookback" in params:
+            out["max_m5_lookback"] = int(params["max_m5_lookback"])
+        if "allowed_energy" in params:
+            ae = params["allowed_energy"]
+            if isinstance(ae, (list, tuple)) and ae:
+                out["allowed_energy"] = tuple(ae)
+        return out
 
     return dict(params)
 
@@ -220,6 +233,14 @@ def _persist_result(request: BacktestRequest, result: BacktestResult) -> int:
                     pnl=Decimal(str(t.pnl)),
                     pnl_net=Decimal(str(t.pnl_net)),
                     pnl_percent=Decimal(str(t.pnl_percent)),
+                    pattern=getattr(t, "pattern", None),
+                    level_score=getattr(t, "level_score", None),
+                    energy=getattr(t, "energy", None),
+                    path_ratio=(
+                        Decimal(str(t.path_ratio))
+                        if getattr(t, "path_ratio", None) is not None
+                        else None
+                    ),
                 )
             )
 
@@ -243,21 +264,72 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     params = _validate_params(request.strategy, request.params)
 
     repo = CandleRepository()
-    df = repo.get_dataframe(
-        symbol=request.symbol,
-        timeframe=request.timeframe,
-        start=request.start,
-        end=request.end,
-    )
-
-    if df.empty:
-        return _empty_result(request, params)
-
     cerebro = bt.Cerebro(runonce=False)
-    cerebro.adddata(df_to_bt_feed(df))
-
-    # Pass risk config to the strategy (or None → default RiskConfig).
     strategy_kwargs = dict(params)
+
+    if request.strategy == "gerchik_rejection":
+        # GerchikRejection needs three feeds:
+        #   datas[0] = M1 (primary, source for resampling)
+        #   datas[1] = M5 (resampled from M1) — next() runs here
+        #   datas[2] = D1 (separate, for future-proofing / context)
+        from datetime import timedelta
+
+        from app.strategies.gerchik.precompute import precompute_gerchik
+
+        df_m1 = repo.get_dataframe(
+            symbol=request.symbol,
+            timeframe=1,
+            start=request.start,
+            end=request.end,
+        )
+        if df_m1.empty:
+            return _empty_result(request, params)
+
+        # Warmup for ATR (atr_period=5 + history for level detection).
+        load_start = request.start - timedelta(days=30)
+        df_d1 = repo.get_dataframe(
+            symbol=request.symbol,
+            timeframe=24,
+            start=load_start,
+            end=request.end,
+        )
+        if df_d1.empty:
+            return _empty_result(request, params)
+
+        cerebro.adddata(df_to_bt_feed(df_m1), name="m1")
+        cerebro.resampledata(
+            cerebro.datas[0],
+            timeframe=bt.TimeFrame.Minutes,
+            compression=5,
+            name="m5",
+        )
+        cerebro.adddata(df_to_bt_feed(df_d1), name="d1")
+
+        with SessionLocal() as db:
+            days = precompute_gerchik(
+                session=db,
+                symbol=request.symbol,
+                start=load_start,
+                end=request.end,
+            )
+        strategy_kwargs["levels_cache"] = {d.date: d for d in days}
+        strategy_kwargs["symbol"] = request.symbol
+        logger.info("GerchikRejection: %d days precomputed", len(days))
+
+        # `bars` metric below = number of M1 bars traded on.
+        # The single-feed `df` won't be defined in this branch otherwise.
+        df = df_m1
+    else:
+        # Single-feed (SMA / RSI / Levin / builtins): as before.
+        df = repo.get_dataframe(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            start=request.start,
+            end=request.end,
+        )
+        if df.empty:
+            return _empty_result(request, params)
+        cerebro.adddata(df_to_bt_feed(df))
 
     # Risk config resolution:
     # 1. request.risk_config — explicit override from client.
@@ -292,9 +364,7 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     cerebro.addobserver(bt.observers.Value)
     cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name="dd")
-    cerebro.addanalyzer(
-        bt.analyzers.TimeReturn, _name="returns", timeframe=bt.TimeFrame.Days
-    )
+    cerebro.addanalyzer(bt.analyzers.TimeReturn, _name="returns", timeframe=bt.TimeFrame.Days)
     cerebro.addanalyzer(
         bt.analyzers.SharpeRatio,
         _name="sharpe",
@@ -421,9 +491,7 @@ def compare_backtests(ids: list[int]) -> CompareResponse:
     # Group equity by backtest_id (in Python).
     equity_by_bt: dict[int, list[EquityPoint]] = {i: [] for i in ids}
     for e in equity_rows:
-        equity_by_bt[e.backtest_id].append(
-            EquityPoint(timestamp=e.timestamp, value=float(e.value))
-        )
+        equity_by_bt[e.backtest_id].append(EquityPoint(timestamp=e.timestamp, value=float(e.value)))
 
     # Preserve the order the user asked for.
     by_id = {r.id: r for r in rows}

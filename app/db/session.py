@@ -11,10 +11,19 @@ from app.config import settings
 engine = create_engine(
     settings.database_url,
     echo=settings.debug,
-    connect_args={"check_same_thread": False}
-    if settings.database_url.startswith("sqlite")
-    else {},
+    connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {},
 )
+
+from sqlalchemy import event
+
+
+@event.listens_for(engine, "connect")
+def _enable_sqlite_fk(dbapi_conn, connection_record):
+    """Enable ON DELETE CASCADE for SQLite (off by default)."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
 
 # Фабрика сессий. autoflush=False — не отправлять изменения в БД до commit.
 # expire_on_commit=False — не «забывать» объекты после commit, чтобы можно было
