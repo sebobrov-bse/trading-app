@@ -79,9 +79,9 @@ class GerchikRejection(BaseStrategy):
 
         # Pending / active trade
         self._entry_pattern: RejectionPattern | None = None
+        self._entry_meta: dict | None = None
         self._closing: bool = False
         self._entry_m5_dt: datetime | None = None
-        self._entry_pattern: RejectionPattern | None = None
         self._last_m5_dt: datetime | None = None
 
         # Diagnostics counters (read from outside after run).
@@ -204,10 +204,6 @@ class GerchikRejection(BaseStrategy):
         if self.cfg.use_entry_time_filter and not self._in_entry_window(m5_dt):
             return
 
-        # Entry time filter (optional).
-        if self.cfg.use_entry_time_filter and not self._in_entry_window(m5_dt):
-            return
-
         m5_df = self._build_m5_df()
         if m5_df is None or len(m5_df) < 2:
             return
@@ -232,6 +228,13 @@ class GerchikRejection(BaseStrategy):
                 f"entry={pat.entry_price:.4f} stop={pat.stop_price:.4f} "
                 f"tp={pat.tp_price:.4f}"
             )
+            # Snapshot level metadata; attached to trade_log on close.
+            self._entry_meta = {
+                "pattern": "rejection",
+                "level_score": row.total_score,
+                "energy": row.energy.value,
+                "path_ratio": self.path_ratio,
+            }
             # Immediately check M1 fill inside the БПУ2 (M5 N-1).
             self._check_fill_and_execute(pat)
             return
@@ -261,67 +264,6 @@ class GerchikRejection(BaseStrategy):
                 }
             )
         return pd.DataFrame(rows)
-
-        # ------------------------------------------------------------------
-        #  M1 fill check
-        # ------------------------------------------------------------------
-
-        # Collect M1 bars INSIDE the БПУ2 M5.
-        # Backtrader: [0] = current (newest), [-1] = previous, ...
-        # Iterate from newest to oldest; break at M5 start.
-        # Window: [m5_start, bpu2_dt)  — 5 M1-bars inside the БПУ2.
-        m1_bars: list[dict] = []
-        for i in range(len(self.m1_data)):
-            m1_dt = self.m1_data.datetime.datetime(-i)
-            if m1_dt >= bpu2_dt:
-                continue  # M1 in the current (forming) M5 — skip
-            if m1_dt < m5_start:
-                break  # reached bars before the БПУ2 — stop
-            m1_bars.insert(
-                0,
-                {
-                    "high": float(self.m1_data.high[-i]),
-                    "low": float(self.m1_data.low[-i]),
-                    "close": float(self.m1_data.close[-i]),
-                },
-            )
-
-        bpu2_bar = {
-            "high": float(self.m5_data.high[-1]),
-            "low": float(self.m5_data.low[-1]),
-            "close": float(self.m5_data.close[-1]),
-        }
-
-        status, info = check_m1_fill(
-            bpu2_bar,
-            m1_bars,
-            pat.level,
-            pat.luff,
-            pat.direction,
-            self.cfg.m1_timing_mode,
-        )
-
-        if status == "FILLED":
-            self.counters["filled"] += 1
-            self.safe_buy(
-                direction="long" if pat.direction == "LONG" else "short",
-                custom_stop=pat.stop_price,
-                custom_tp=pat.tp_price,
-            )
-            self._entry_pattern = pat
-            self._entry_m5_dt = bpu2_dt
-            self.log(
-                f"FILLED {pat.direction} level={pat.level:.2f} "
-                f"limit={pat.entry_price:.4f} m1_bars={len(m1_bars)}"
-            )
-        elif status == "MODEL_BROKEN":
-            self.counters["model_broken"] += 1
-            self.log(f"MODEL_BROKEN {pat.direction} level={pat.level:.2f}")
-        else:
-            self.counters["not_filled"] += 1
-            self.log(f"NOT_FILLED {pat.direction} level={pat.level:.2f} m1_bars={len(m1_bars)}")
-
-        self.pending_entry = None
 
     # ------------------------------------------------------------------
     #  Position management
@@ -415,3 +357,11 @@ class GerchikRejection(BaseStrategy):
             if elapsed_h >= self.cfg.position_timeout_hours:
                 self.safe_close()
                 self.log(f"EXIT timeout {elapsed_h:.1f}h")
+
+    def notify_trade(self, trade) -> None:
+        """Enrich the just-appended trade_log entry with rejection context."""
+        meta = self._entry_meta
+        super().notify_trade(trade)
+        if trade.isclosed and meta is not None and self.trade_log:
+            self.trade_log[-1].update(meta)
+            self._entry_meta = None

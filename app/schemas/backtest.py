@@ -36,6 +36,12 @@ class TradeInfo(BaseModel):
     pnl: float
     pnl_net: float
     pnl_percent: float
+    # Optional context fields (filled only by strategies that provide them,
+    # e.g. gerchik_rejection). None for SMA/RSI/Levin.
+    pattern: str | None = None
+    level_score: int | None = None
+    energy: str | None = None
+    path_ratio: float | None = None
 
 
 class EquityPoint(BaseModel):
