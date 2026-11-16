@@ -122,18 +122,25 @@ def detect_breakout_setup(
     setup_reason = energy_lower
 
     # --- Step 2: price hasn't broken through level yet ---
-    # LONG: need level ABOVE current price (price approaching from below).
-    # SHORT: level BELOW current price (price approaching from above).
+    # Also: if price is already FAR from the level (> cancel_distance × stop),
+    # setup has no chance — the strategy will cancel it anyway. Not detect.
+    calc_stop = level * config.stop_loss_pct
+    max_distance = config.breakout_cancel_distance * calc_stop
+
     if direction == "LONG":
         if last_close >= level:
             return None
-        if last_high >= level:  # wick already touched/ crossed — too late
+        if last_high >= level:  # wick already touched/crossed — too late
             return None
+        if (level - last_close) > max_distance:
+            return None  # price too far below the level
     else:  # SHORT
         if last_close <= level:
             return None
         if last_low <= level:
             return None
+        if (last_close - level) > max_distance:
+            return None  # price too far above the level
 
     # --- Step 3: strong move check ---
     strong_move = _check_strong_move_before(
