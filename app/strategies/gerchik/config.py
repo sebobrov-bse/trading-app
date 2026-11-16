@@ -114,6 +114,43 @@ class GerchikConfig(BaseModel):
     commission_rate: float = Field(default=0.0002, gt=0, lt=0.01)
     include_commission_in_tp: bool = Field(default=True)
 
+    # ---- Breakout pattern (S.2c: Пробой) ----
+    # Distance от уровня для Stop-ордера: max(ticks*tick_size, pct*level).
+    breakout_stop_order_offset_ticks: int = Field(default=2, ge=0, le=20)
+    breakout_stop_order_offset_pct: float = Field(default=0.0002, gt=0, lt=0.01)
+
+    # Отмена Setup: если цена ушла от уровня больше, чем на N × stop_size.
+    breakout_cancel_distance: float = Field(default=2.0, gt=0, lt=10)
+
+    # Время жизни Setup: 12 M5 = 1 час. Если не сработал — expired.
+    breakout_max_wait_bars: int = Field(default=12, ge=1, le=100)
+
+    # Хвост пробойного M1-бара: если > tail_threshold × range, это "большой"
+    # хвост, и технический стоп за ним может быть слишком широким.
+    breakout_tail_threshold: float = Field(default=0.5, gt=0, lt=1)
+
+    # Сильное движение ДО подхода к уровню: > strong_move_atr × ATR.
+    # Если да — требуем 2 бара закрепления вместо 1.
+    breakout_strong_move_atr: float = Field(default=3.0, gt=0, lt=20)
+    breakout_strong_move_lookback: int = Field(default=10, ge=3, le=50)
+
+    # Подтверждающие бары: strong=2 (для сильного движения), normal=1.
+    breakout_confirm_bars_strong: int = Field(default=2, ge=1, le=5)
+    breakout_confirm_bars_normal: int = Field(default=1, ge=1, le=5)
+
+    # Опциональное volume-подтверждение (по умолчанию off — данных по M5 volume
+    # в БД может не быть, или они не сопоставимы между источниками).
+    breakout_use_volume_confirm: bool = Field(default=False)
+
+    # M1-режим срабатывания Stop-ордера: "any" (любой M1 внутри M5) или
+    # "strict" (только последний M1). "any" — методологически правильный
+    # для висящего ордера, "strict" — только для сравнения.
+    breakout_m1_mode: str = Field(default="any")
+
+    # Отмена при усилении COMPRESSION: если энергия стала "сильнее"
+    # (была normal → стала compression), Setup может быть уже неактуален.
+    breakout_cancel_on_compression: bool = Field(default=True)
+
     # ---- Rejection strategy: NEUTRAL fallback ----
     # If trend == NEUTRAL, allow trading in the direction of path_ratio
     # only when |path_ratio| >= this threshold. Without fallback, 13/19
