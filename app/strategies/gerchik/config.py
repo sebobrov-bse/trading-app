@@ -151,6 +151,44 @@ class GerchikConfig(BaseModel):
     # (была normal → стала compression), Setup может быть уже неактуален.
     breakout_cancel_on_compression: bool = Field(default=True)
 
+    # ---- False breakout pattern (S.2d: ЛП) ----
+    # Хвост пробойного бара: >= fb_min_tail_ratio × range.
+    # 0.25 — «четверть бара-хвост» минимум, иначе это не ЛП, а шум.
+    fb_min_tail_ratio: float = Field(default=0.25, gt=0, lt=1)
+
+    # Close должен вернуться за уровень на N (0 = любой возврат).
+    fb_min_close_depth: float = Field(default=0.0, ge=0)
+
+    # Следующий бар не обновил экстремум пробойного — подтверждение «нет импульса».
+    fb_require_next_bar_no_extreme: bool = Field(default=True)
+
+    # Stop-ордер: max(ticks*tick_size, pct*level) за уровнем (в сторону разворота).
+    fb_stop_order_offset_ticks: int = Field(default=2, ge=0, le=20)
+    fb_stop_order_offset_pct: float = Field(default=0.0002, gt=0, lt=0.01)
+
+    # Отмена: цена ушла от уровня на N × calculated_stop.
+    fb_cancel_distance: float = Field(default=2.0, gt=0, lt=10)
+
+    # Время жизни Setup.
+    fb_max_wait_bars: int = Field(default=12, ge=1, le=100)
+
+    # Fallback: если технический стоп (за хвостом) > calculated_stop — используем
+    # calculated_stop, НЕ пропускаем сделку (в отличие от S.2c).
+    fb_stop_fallback_to_calculated: bool = Field(default=True)
+
+    # Расчётный стоп: 0.2% от уровня.
+    fb_calculated_stop_pct: float = Field(default=0.002, gt=0, lt=0.05)
+
+    # ЛП после провалившейся аккумуляции (energy=accumulation/compression, но
+    # пробой провалился) — разрешён.
+    fb_allow_after_failed_accumulation: bool = Field(default=True)
+
+    # Сложный ЛП (3+ бара) — по умолчанию выключен.
+    fb_allow_complex: bool = Field(default=False)
+
+    # M1-режим: "any" (любой M1) | "strict" (только последний).
+    fb_m1_mode: str = Field(default="any")
+
     # ---- Rejection strategy: NEUTRAL fallback ----
     # If trend == NEUTRAL, allow trading in the direction of path_ratio
     # only when |path_ratio| >= this threshold. Without fallback, 13/19
