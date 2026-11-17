@@ -31,6 +31,7 @@ from app.strategies.sma_crossover import SmaCrossover
 from app.strategies.levin.strategy import LevinSystem
 from app.strategies.gerchik.rejection_strategy import GerchikRejection
 from app.strategies.gerchik.breakout_strategy import GerchikBreakout
+from app.strategies.gerchik.false_breakout_strategy import GerchikFalseBreakout
 from app.strategies.loader import load_builtin, load_custom
 
 
@@ -43,6 +44,7 @@ STRATEGY_REGISTRY: dict[str, type[bt.Strategy]] = {
     "levin": LevinSystem,
     "gerchik_rejection": GerchikRejection,
     "gerchik_breakout": GerchikBreakout,
+    "gerchik_false_breakout": GerchikFalseBreakout,
 }
 
 
@@ -153,6 +155,40 @@ def _validate_params(strategy_name: str, params: dict[str, Any]) -> dict[str, An
                 out["system_config"] = GerchikConfig(**overrides)
             except Exception as exc:
                 raise ValueError(f"Invalid gerchik_breakout config override: {exc}") from exc
+        return out
+
+    if strategy_name == "gerchik_false_breakout":
+        from app.strategies.gerchik.config import GerchikConfig
+
+        out: dict = {}
+        if "allowed_energy" in params:
+            ae = params["allowed_energy"]
+            if isinstance(ae, (list, tuple)) and ae:
+                out["allowed_energy"] = tuple(ae)
+
+        config_keys = (
+            "fb_min_tail_ratio",
+            "fb_min_close_depth",
+            "fb_require_next_bar_no_extreme",
+            "fb_cancel_distance",
+            "fb_max_wait_bars",
+            "fb_stop_fallback_to_calculated",
+            "fb_calculated_stop_pct",
+            "fb_allow_after_failed_accumulation",
+            "fb_allow_complex",
+            "fb_m1_mode",
+            "min_rr",
+            "room_to_move_multiplier",
+        )
+        overrides: dict = {}
+        for key in config_keys:
+            if key in params and params[key] is not None:
+                overrides[key] = params[key]
+        if overrides:
+            try:
+                out["system_config"] = GerchikConfig(**overrides)
+            except Exception as exc:
+                raise ValueError(f"Invalid gerchik_false_breakout config override: {exc}") from exc
         return out
 
     return dict(params)
@@ -326,7 +362,11 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     if system_config is not None:
         strategy_kwargs["system_config"] = system_config
 
-    if request.strategy in ("gerchik_rejection", "gerchik_breakout"):
+    if request.strategy in (
+        "gerchik_rejection",
+        "gerchik_breakout",
+        "gerchik_false_breakout",
+    ):
         # GerchikRejection needs three feeds:
         #   datas[0] = M1 (primary, source for resampling)
         #   datas[1] = M5 (resampled from M1) — next() runs here
