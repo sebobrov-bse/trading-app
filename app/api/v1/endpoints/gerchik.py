@@ -19,6 +19,7 @@ from app.strategies.gerchik.config import GerchikConfig
 from app.strategies.gerchik.precompute import precompute_gerchik
 from app.strategies.gerchik.rejection import find_rejection_pattern
 from app.strategies.gerchik.breakout import detect_breakout_setup
+from app.strategies.gerchik.false_breakout import detect_false_breakout
 from app.strategies.gerchik.m1_stop_timing import check_stop_order_trigger
 
 logger = logging.getLogger(__name__)
@@ -511,6 +512,218 @@ def breakout_debug(
         "levels_in_range": len(strong),
         "skipped_by_direction": skipped_direction,
         "skipped_by_energy": skipped_energy,
+        "events": events,
+        "triggered_count": triggered_count,
+        "cancelled_count": len(events) - triggered_count,
+    }
+
+
+@router.get("/gerchik/false-breakout-debug/{symbol}")
+def false_breakout_debug(
+    symbol: str,
+    date_str: str | None = Query(default=None, alias="date"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Debug: run false breakout (ЛП) detection for a single day.
+
+    IMPORTANT: stateless — does NOT replicate the strategy's full state
+    machine (no cooldown, no position, no session_end). Shows ALL
+    potential FB setups at a level/date.
+
+    Direction is derived per-level:
+        level > last_close -> SHORT (false UP breakout)
+        level < last_close -> LONG  (false DOWN breakout)
+
+    Returns per-setup trace: detected_at, triggered/cancelled, fill.
+    """
+    if date_str is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Query parameter 'date' is required (YYYY-MM-DD)",
+        )
+    try:
+        target = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid date '{date_str}', expected YYYY-MM-DD",
+        )
+
+    symbol = symbol.upper()
+
+    # --- Load M1 ---
+    repo = CandleRepository()
+    df_m1 = repo.get_dataframe(
+        symbol=symbol,
+        timeframe=1,
+        start=target,
+        end=target + timedelta(days=1),
+    )
+    if df_m1 is None or df_m1.empty:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No M1 data for {symbol} on {target}",
+        )
+
+    df_m1 = df_m1.copy()
+    df_m1.columns = [c.lower() for c in df_m1.columns]
+    if "timestamp" in df_m1.columns:
+        df_m1 = df_m1.set_index("timestamp")
+
+    df_m5 = (
+        df_m1.resample("5min", label="left", closed="left")
+        .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+        .dropna(subset=["high", "low", "close"])
+    )
+
+    if len(df_m5) < 3:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Not enough M5 bars for {symbol} on {target}",
+        )
+
+    m5_bars = df_m5.reset_index().rename(columns={"index": "timestamp"})
+    if "timestamp" not in m5_bars.columns:
+        m5_bars = m5_bars.rename(columns={m5_bars.columns[0]: "timestamp"})
+
+    # --- Precompute D1 (warmup) ---
+    load_start = target - timedelta(days=30)
+    days = precompute_gerchik(db, symbol, load_start, target)
+    if not days:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No precompute for {symbol} on {target}",
+        )
+    day = days[-1]
+
+    config = GerchikConfig()
+    allowed_energy = ("distribution", "accumulation", "compression")
+
+    if day.atr > 0 and day.prev_close > 0:
+        day_low = day.prev_close - 2.0 * day.atr
+        day_high = day.prev_close + 2.0 * day.atr
+    else:
+        day_low, day_high = 0.0, 1e9
+
+    strong = [
+        r
+        for r in day.rows
+        if r.energy.value in allowed_energy and day_low <= r.level_price <= day_high
+    ]
+
+    events: list[dict] = []
+    skipped_by_neutral = 0
+    skipped_by_level_pos = 0
+
+    for row in strong:
+        # Walk forward: at each prefix, try detect FB.
+        i = 2  # need at least 2 bars for 1-bar detection
+        while i < len(m5_bars):
+            prefix = m5_bars.iloc[: i + 1]
+            # Direction per-prefix (uses last close in prefix).
+            last_close = float(prefix.iloc[-1]["close"])
+            if row.level_price > last_close:
+                direction = "SHORT"
+            elif row.level_price < last_close:
+                direction = "LONG"
+            else:
+                skipped_by_level_pos += 1
+                i += 1
+                continue
+
+            # Energy check inside detector
+            setup = detect_false_breakout(
+                prefix,
+                row.level_price,
+                direction,
+                row.energy.value,
+                row.total_score,
+                config,
+            )
+            if setup is None:
+                i += 1
+                continue
+
+            detected_ts = m5_bars.iloc[i]["timestamp"]
+            events.append(
+                {
+                    "level": round(row.level_price, 4),
+                    "level_type": row.level_type.value,
+                    "level_score": row.total_score,
+                    "energy": row.energy.value,
+                    "direction": direction,
+                    "pattern": setup.pattern,
+                    "detected_at": detected_ts.isoformat()
+                    if hasattr(detected_ts, "isoformat")
+                    else str(detected_ts),
+                    "stop_order_price": round(setup.stop_order_price, 4),
+                    "tail_size": round(setup.tail_size, 4),
+                    "setup_reason": setup.setup_reason,
+                    "outcome": "cancelled_expired",  # default
+                }
+            )
+
+            last_checked = i
+            for j in range(i + 1, min(i + 1 + config.fb_max_wait_bars, len(m5_bars))):
+                last_checked = j
+                bar_close = float(m5_bars.iloc[j]["close"])
+
+                # Cancel: level_reclaimed (highest priority)
+                if direction == "SHORT" and bar_close > row.level_price:
+                    events[-1]["outcome"] = "cancelled_level_reclaimed"
+                    break
+                if direction == "LONG" and bar_close < row.level_price:
+                    events[-1]["outcome"] = "cancelled_level_reclaimed"
+                    break
+
+                # Cancel: moved_away
+                distance = abs(bar_close - row.level_price)
+                threshold = config.fb_cancel_distance * setup.calculated_stop_size
+                if distance > threshold:
+                    events[-1]["outcome"] = "cancelled_moved_away"
+                    events[-1]["cancel_distance"] = round(distance, 4)
+                    break
+
+                # Trigger: check M1 inside this M5
+                ts = m5_bars.iloc[j]["timestamp"]
+                m1_start_ts = ts - timedelta(minutes=5)
+                m1_in = df_m1[(df_m1.index > m1_start_ts) & (df_m1.index <= ts)]
+                if m1_in.empty:
+                    continue
+
+                m1_list = [
+                    {
+                        "open": float(r["open"]),
+                        "high": float(r["high"]),
+                        "low": float(r["low"]),
+                        "close": float(r["close"]),
+                    }
+                    for _, r in m1_in.iterrows()
+                ]
+                trig, fill = check_stop_order_trigger(
+                    setup,
+                    m1_list,
+                    mode=config.fb_m1_mode,
+                )
+                if trig:
+                    events[-1]["outcome"] = "triggered"
+                    events[-1]["fill_price"] = round(fill, 4)
+                    events[-1]["m1_bars"] = len(m1_list)
+                    break
+
+            i = last_checked + 1
+
+    triggered_count = sum(1 for e in events if e["outcome"] == "triggered")
+    return {
+        "date": target.isoformat(),
+        "symbol": symbol,
+        "trend": day.trend,
+        "path_ratio": round(day.path_ratio, 4),
+        "atr": round(day.atr, 4),
+        "m1_bars": len(df_m1),
+        "m5_bars": len(m5_bars),
+        "levels_in_range": len(strong),
+        "skipped_by_neutral": skipped_by_neutral,
         "events": events,
         "triggered_count": triggered_count,
         "cancelled_count": len(events) - triggered_count,
