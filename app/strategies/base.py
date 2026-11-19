@@ -2,7 +2,6 @@
 
 import logging
 from datetime import date
-from typing import Literal
 
 import backtrader as bt
 
@@ -58,6 +57,7 @@ class BaseStrategy(bt.Strategy):
         self.bars_in_market: int = 0
         self._last_entry: dict | None = None
         self._last_exit: dict | None = None
+        self._pending_order_kind: str | None = None  # "entry" | "exit"
 
         # ---- risk management ----
         cfg = self.p.risk_config
@@ -121,6 +121,7 @@ class BaseStrategy(bt.Strategy):
 
         # No risk manager: plain entry.
         if self.risk is None:
+            self._pending_order_kind = "entry"
             if direction == "long":
                 self.order = self.buy()
             else:
@@ -128,7 +129,10 @@ class BaseStrategy(bt.Strategy):
             return
 
         # Risk gate (with optional custom stop for position sizing).
-        allowed, reason = self.risk.can_open_position(direction, custom_stop=custom_stop)
+        allowed, reason = self.risk.can_open_position(
+            direction,
+            custom_stop=custom_stop,
+        )
         if not allowed:
             self.log(f"SKIP {direction}: {reason}")
             return
@@ -139,11 +143,19 @@ class BaseStrategy(bt.Strategy):
             tp_price = (
                 custom_tp
                 if custom_tp is not None
-                else self.risk.calculate_take_profit_price(entry_price, stop_price, direction)
+                else self.risk.calculate_take_profit_price(
+                    entry_price,
+                    stop_price,
+                    direction,
+                )
             )
         else:
             stop_price = self.risk.calculate_stop_price(entry_price, direction)
-            tp_price = self.risk.calculate_take_profit_price(entry_price, stop_price, direction)
+            tp_price = self.risk.calculate_take_profit_price(
+                entry_price,
+                stop_price,
+                direction,
+            )
 
         # Size (still uses RiskManager's calculator, but with our stop).
         if size is None:
@@ -152,21 +164,21 @@ class BaseStrategy(bt.Strategy):
             self.log(f"SKIP {direction}: size=0")
             return
 
-        # Entry.
-        if direction == "long":
-            self.order = self.buy(size=size)
-        else:
-            self.order = self.sell(size=size)
-
-        # Remember bracket levels. Real stop/tp orders are placed in
-        # notify_order after the entry is Completed, so Backtrader knows
-        # the actual executed price.
+        # Remember bracket levels BEFORE placing the order, so that
+        # notify_order can place stop/tp once entry is filled.
         self._direction = direction
         self._stop_price = stop_price
         self._tp_price = tp_price
         self._pending_size = size
         self._breakeven_done = False
         self._trailing_on = False
+
+        # Entry.
+        self._pending_order_kind = "entry"
+        if direction == "long":
+            self.order = self.buy()
+        else:
+            self.order = self.sell()
 
     def safe_close(self) -> None:
         """Cancel all outstanding orders and close the current position."""
@@ -183,6 +195,7 @@ class BaseStrategy(bt.Strategy):
         self._tp_price = None
 
         if self.position:
+            self._pending_order_kind = "exit"
             self.order = self.close()
 
     # ------------------------------------------------------------------
@@ -348,10 +361,11 @@ class BaseStrategy(bt.Strategy):
             exec_price = float(order.executed.price)
 
             info = {"time": dt, "price": exec_price, "size": exec_size}
-            if order.isbuy():
-                self._last_entry = info
-            else:
+            if self._pending_order_kind == "exit":
                 self._last_exit = info
+            else:
+                self._last_entry = info
+            self._pending_order_kind = None
 
             self._entry_price = exec_price
             size = abs(int(order.executed.size))
@@ -379,10 +393,8 @@ class BaseStrategy(bt.Strategy):
             exec_price = float(order.executed.price)
             info = {"time": dt, "price": exec_price, "size": exec_size}
 
-            if order.isbuy():
-                self._last_entry = info
-            else:
-                self._last_exit = info
+            # Bracket orders (stop / TP) are ALWAYS exits.
+            self._last_exit = info
 
             if order == self._stop_order:
                 self.log("STOP HIT")
@@ -470,7 +482,7 @@ class BaseStrategy(bt.Strategy):
         self._last_entry = None
         self._last_exit = None
         self._entry_price = None
-        self._stop_price = None
+        self._stop_price = None  # _pending_order_kind will be reset in notify_order on Completed.
         self._tp_price = None
         self._direction = None
         self._initial_risk_per_unit = 0.0

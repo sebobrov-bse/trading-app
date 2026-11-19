@@ -53,7 +53,9 @@ class GerchikBreakout(BaseStrategy):
     tags = ["gerchik", "breakout", "trend", "intraday"]
     intraday_only = True
     direction = {"long": True, "short": True}
-    default_risk_config = {"risk_per_trade_pct": 0.25}
+    default_risk_config = {
+        "risk_per_trade_pct": 0.25,
+    }
 
     params = (
         ("symbol", "SBER"),
