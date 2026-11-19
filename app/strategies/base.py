@@ -194,7 +194,7 @@ class BaseStrategy(bt.Strategy):
         self._stop_price = None
         self._tp_price = None
 
-        if self.position:
+        if self.position.size > 0:
             self._pending_order_kind = "exit"
             self.order = self.close()
 
@@ -388,8 +388,16 @@ class BaseStrategy(bt.Strategy):
 
         # Bracket orders: cancel the sibling when one fires.
         elif order.status == order.Completed:
-            dt = self.datas[0].datetime.datetime(0)
             exec_size = abs(float(order.executed.size))
+            if exec_size == 0:
+                # Phantom close() when position was already 0.
+                # Do NOT touch _last_exit — but MUST reset self.order,
+                # otherwise safe_buy blocks all future entries.
+                if order == self.order:
+                    self.order = None
+                return
+
+            dt = self.datas[0].datetime.datetime(0)
             exec_price = float(order.executed.price)
             info = {"time": dt, "price": exec_price, "size": exec_size}
 

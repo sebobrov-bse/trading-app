@@ -84,8 +84,6 @@ class GerchikFalseBreakout(BaseStrategy):
 
         # Entry state
         self._entry_pattern_meta: dict | None = None
-        self._target_price: float | None = None
-        self._target_direction: str | None = None
         self._entry_m5_dt: datetime | None = None
         self._closing: bool = False
         self._cooldown_until: datetime | None = None
@@ -418,18 +416,12 @@ class GerchikFalseBreakout(BaseStrategy):
         }
         self._entry_m5_dt = m5_dt
         self._closing = False
-        # Logical TP (checked in _manage_position) instead of TP order.
-        # Prevents race condition between safe_close's cancel(tp) and
-        # TP fill (phantom position -> fake bt.pnl).
-        self._target_price = tp_price
-        self._target_direction = setup.direction
 
         self.safe_buy(
             direction="long" if setup.direction == "LONG" else "short",
             custom_stop=stop_price,
-            # NOT passing custom_tp -> no TP order -> no phantom.
+            custom_tp=tp_price,
         )
-
         self.log(
             f"TRIGGERED {setup.direction} level={setup.level:.2f} "
             f"fill={entry:.4f} stop={stop_price:.4f} tp={tp_price:.4f} "
@@ -446,27 +438,7 @@ class GerchikFalseBreakout(BaseStrategy):
     def _manage_position(self, m5_dt: datetime) -> None:
         if not self.position:
             self._closing = False
-            self._target_price = None
-            self._target_direction = None
             return
-
-        # Logical TP: check M5 close against target.
-        if self._target_price is not None and self._target_direction is not None:
-            last_close = float(self.m5_data.close[-1])
-            hit_tp = False
-            if self._target_direction == "LONG" and last_close >= self._target_price:
-                hit_tp = True
-            elif self._target_direction == "SHORT" and last_close <= self._target_price:
-                hit_tp = True
-            if hit_tp:
-                if not self._closing:
-                    self._closing = True
-                    self.safe_close()
-                    self.log(
-                        f"EXIT target_hit {self._target_direction} "
-                        f"close={last_close:.4f} target={self._target_price:.4f}"
-                    )
-                return
 
         session_end = (
             self.cfg.session_end_evening
