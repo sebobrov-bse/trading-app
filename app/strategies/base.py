@@ -391,10 +391,10 @@ class BaseStrategy(bt.Strategy):
             exec_size = abs(float(order.executed.size))
             if exec_size == 0:
                 # Phantom close() when position was already 0.
-                # Do NOT touch _last_exit — but MUST reset self.order,
-                # otherwise safe_buy blocks all future entries.
-                if order == self.order:
-                    self.order = None
+                # MUST reset self.order unconditionally — otherwise
+                # safe_buy() blocks all future entries (`if self.order: return`).
+                self.order = None
+                self._pending_order_kind = None
                 return
 
             dt = self.datas[0].datetime.datetime(0)
